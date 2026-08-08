@@ -75,5 +75,20 @@ cd server && npm test
 ## Proposal reference
 
 Original academic proposal PDF: [docs/proposal/](docs/proposal/).
-# SafeHand
-# SafeHand
+
+## Deploy (Vercel — Expo web)
+
+The Expo web app is a static export under `app/`. In the Vercel project:
+
+1. **Root Directory:** `app`
+2. **Build Command:** `npm run build` (runs `npx expo export --platform web`)
+3. **Output Directory:** `dist`
+4. **Environment variable:** `EXPO_PUBLIC_API_URL` = your production API base URL (e.g. `https://api.example.com`)
+
+`app/vercel.json` already sets the build command, output directory, and SPA rewrites for client-side routing. Framework preset can be **Other**.
+
+```bash
+# Verify the export locally
+cd app && npm run build
+# → produces app/dist (gitignored)
+```

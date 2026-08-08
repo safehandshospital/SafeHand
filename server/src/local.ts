@@ -1,4 +1,4 @@
-import { getApp, prisma } from "./app.js";
+import { getApp, prisma } from "./create-app.js";
 
 const app = await getApp();
 

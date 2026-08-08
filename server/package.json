@@ -4,8 +4,8 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "tsx watch src/index.ts",
-    "start": "node dist/index.js",
+    "dev": "tsx watch src/local.ts",
+    "start": "node dist/src/local.js",
     "build": "prisma generate && tsc",
     "postinstall": "prisma generate",
     "lint": "tsc --noEmit",

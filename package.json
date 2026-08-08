@@ -1,0 +1,15 @@
+{
+  "name": "healthcare-booking",
+  "version": "0.1.0",
+  "private": true,
+  "description": "AI-enhanced healthcare appointment booking system",
+  "scripts": {
+    "dev": "npm run dev --prefix server & npm run web --prefix app",
+    "dev:app": "npm run web --prefix app",
+    "dev:server": "npm run dev --prefix server",
+    "db:migrate": "npm run db:migrate --prefix server",
+    "db:seed": "npm run db:seed --prefix server",
+    "test": "npm run test --prefix server",
+    "lint": "npm run lint --prefix app && npm run lint --prefix server"
+  }
+}

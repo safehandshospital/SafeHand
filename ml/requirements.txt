@@ -1,0 +1,8 @@
+# Phase 6 — install when activating custom ML training
+scikit-learn>=1.5.0
+pandas>=2.2.0
+numpy>=1.26.0
+joblib>=1.4.0
+# Optional browser export tooling (choose one path later):
+# tensorflowjs
+# m2cgen

@@ -11,3 +11,4 @@ server/prisma/*.db
 server/prisma/*.db-journal
 app/.expo/
 **/tsconfig.tsbuildinfo
+.vercel

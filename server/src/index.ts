@@ -63,12 +63,18 @@ await app.register(metricsRoutes, { prefix: "/api/metrics" });
 const port = Number(process.env.PORT || 4100);
 const host = process.env.HOST || "0.0.0.0";
 
+// On Vercel, the Fastify framework adapter owns the listen lifecycle.
+// Still call listen() so zero-config detection works; avoid hard-exiting
+// the serverless runtime if the adapter already bound the server.
 try {
   await app.listen({ port, host });
-  console.log(`API listening on http://${host}:${port}`);
+  app.log.info(`API listening on http://${host}:${port}`);
 } catch (err) {
   app.log.error(err);
-  process.exit(1);
+  if (!process.env.VERCEL) {
+    process.exit(1);
+  }
 }
 
+export default app;
 export { app, prisma };

@@ -1,4 +1,4 @@
-import OpenAI from "openai";
+import { OpenAI } from "openai";
 
 const model = process.env.OPENAI_MODEL || "gpt-4o-mini";
 

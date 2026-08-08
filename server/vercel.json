@@ -1,12 +1,5 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "framework": "fastify",
-  "installCommand": "npm install",
-  "buildCommand": "prisma generate",
-  "functions": {
-    "src/index.ts": {
-      "maxDuration": 30,
-      "memory": 1024
-    }
-  }
+  "buildCommand": "prisma generate"
 }

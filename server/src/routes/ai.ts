@@ -1,7 +1,8 @@
 import type { FastifyPluginAsync } from "fastify";
 import { z } from "zod";
-import { recommendSlots, chatAssistant, demandOutlook } from "../services/ai/provider.js";
+import { recommendSlots, chatAssistantAgent, demandOutlook } from "../services/ai/provider.js";
 import { demandLevelForSlot, rankSlotsByDemand } from "../services/demand.js";
+import { assistantTools, executeTool } from "../services/ai/tools.js";
 
 const recommendSchema = z.object({
   departmentId: z.string().min(1),
@@ -171,11 +172,16 @@ export const aiRoutes: FastifyPluginAsync = async (app) => {
       context.departments = departments;
     }
 
+    const { sub: userId } = request.user;
     const started = Date.now();
-    const result = await chatAssistant({
+    const result = await chatAssistantAgent({
       message: parsed.data.message,
       departmentName,
       context,
+      tools: assistantTools,
+      // Bound to this request's authenticated user — the model only ever
+      // supplies entity ids, never a userId, and every tool re-checks ownership.
+      executeTool: (name, argsJson) => executeTool(name, argsJson, { userId, prisma: app.prisma }),
     });
 
     await app.prisma.aiPromptLog.create({
@@ -190,6 +196,7 @@ export const aiRoutes: FastifyPluginAsync = async (app) => {
     });
 
     if (!result.ok) {
+      app.log.error({ err: result.error, provider: result.provider }, "assistant agent failed");
       return {
         source: "fallback",
         reply:
@@ -197,7 +204,11 @@ export const aiRoutes: FastifyPluginAsync = async (app) => {
       };
     }
 
-    return { source: result.provider, reply: result.reply };
+    return {
+      source: result.provider,
+      reply: result.reply,
+      toolCalls: result.toolCalls.map((t) => ({ name: t.name, result: t.result })),
+    };
   });
 
   app.post("/demand-outlook", auth, async (request, reply) => {

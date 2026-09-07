@@ -1,6 +1,14 @@
+import type { ChatCompletionTool } from "openai/resources/chat/completions";
 import { agentrouterProvider } from "./agentrouter.js";
 import { openaiProvider } from "./openai.js";
-import type { ChatProvider, ChatResult, OutlookResult, RecommendResult } from "./completions.js";
+import type {
+  AgentResult,
+  ChatProvider,
+  ChatResult,
+  OutlookResult,
+  RecommendResult,
+  ToolExecutor,
+} from "./completions.js";
 import type { ChatDbContext, SlotInput } from "./prompts.js";
 
 // AgentRouter is the primary provider (free/pooled), OpenAI is the reliable fallback.
@@ -48,6 +56,38 @@ export async function chatAssistant(input: {
   context?: ChatDbContext;
 }): Promise<ChatResult> {
   return withFallback((p) => p.chatAssistant(input)) as Promise<ChatResult>;
+}
+
+export async function chatAssistantAgent(input: {
+  message: string;
+  departmentName?: string;
+  context?: ChatDbContext;
+  tools: ChatCompletionTool[];
+  executeTool: ToolExecutor;
+}): Promise<AgentResult> {
+  const list = providers();
+  if (list.length === 0) {
+    return {
+      ok: false,
+      provider: "none",
+      model: "none",
+      toolCalls: [],
+      sideEffectOccurred: false,
+      error: "No AI provider configured (set AGENTROUTER_API_KEY or OPENAI_API_KEY)",
+    };
+  }
+
+  let last: AgentResult | undefined;
+  for (const provider of list) {
+    const result = await provider.chatAgent(input);
+    if (result.ok) return result;
+    last = result;
+    // A tool with a side effect (booking/cancel/reschedule) already ran on this
+    // provider's turn — switching providers and replaying the conversation from
+    // scratch could invoke it again, so stop instead of falling through.
+    if (result.sideEffectOccurred) return result;
+  }
+  return last as AgentResult;
 }
 
 export async function demandOutlook(input: {

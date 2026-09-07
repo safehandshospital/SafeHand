@@ -1,5 +1,10 @@
 import type { OpenAI } from "openai";
+import type {
+  ChatCompletionMessageParam,
+  ChatCompletionTool,
+} from "openai/resources/chat/completions";
 import {
+  buildAgentMessages,
   buildChatMessages,
   buildOutlookMessages,
   buildRecommendMessages,
@@ -37,6 +42,37 @@ export type OutlookResult = {
   error?: string;
 };
 
+export type ToolExecutor = (
+  name: string,
+  argsJson: string,
+) => Promise<{ result: unknown; sideEffect: boolean }>;
+
+export type AgentToolCallLog = { name: string; args: string; result: unknown };
+
+export type AgentResult = {
+  ok: boolean;
+  provider: string;
+  model: string;
+  reply?: string;
+  toolCalls: AgentToolCallLog[];
+  /** Once true, a fallback to a different provider would risk a duplicate action. */
+  sideEffectOccurred: boolean;
+  error?: string;
+};
+
+const MAX_AGENT_STEPS = 6;
+
+function summarizeToolCalls(calls: AgentToolCallLog[]): string {
+  const last = calls[calls.length - 1];
+  if (!last) return "Done.";
+  const r = last.result as Record<string, unknown>;
+  if (r?.error) return `I couldn't finish that: ${r.error}`;
+  if (r?.booked) return "Booked it — check your appointments for the details.";
+  if (r?.cancelled) return "Cancelled that appointment.";
+  if (r?.rescheduled) return "Rescheduled that appointment.";
+  return "Done — action completed.";
+}
+
 /** Some free/pooled proxies (AgentRouter) return HTTP 200 with empty content instead of erroring. */
 function isBlank(text: string | null | undefined): boolean {
   return !text || text.trim().length === 0;
@@ -64,6 +100,13 @@ export type ChatProvider = {
       score: number;
     }>;
   }): Promise<OutlookResult>;
+  chatAgent(input: {
+    message: string;
+    departmentName?: string;
+    context?: ChatDbContext;
+    tools: ChatCompletionTool[];
+    executeTool: ToolExecutor;
+  }): Promise<AgentResult>;
 };
 
 export function createChatProvider(opts: {
@@ -162,6 +205,89 @@ export function createChatProvider(opts: {
           ok: false,
           provider: name,
           model: adminModel || model,
+          error: err instanceof Error ? err.message : `${name} request failed`,
+        };
+      }
+    },
+
+    async chatAgent(input) {
+      const messages: ChatCompletionMessageParam[] = buildAgentMessages(input);
+      const toolCalls: AgentToolCallLog[] = [];
+      let sideEffectOccurred = false;
+
+      try {
+        for (let step = 0; step < MAX_AGENT_STEPS; step++) {
+          const completion = await client.chat.completions.create({
+            model,
+            messages,
+            tools: input.tools,
+            tool_choice: "auto",
+            temperature: 0.3,
+            max_tokens: 500,
+          });
+
+          const msg = completion.choices[0]?.message;
+          if (!msg) throw new Error(`${name} returned no message`);
+
+          const calls = (msg.tool_calls ?? []).filter((c) => c.type === "function");
+          if (calls.length === 0) {
+            const reply = msg.content?.trim();
+            if (isBlank(reply)) {
+              if (sideEffectOccurred) {
+                return {
+                  ok: true,
+                  provider: name,
+                  model,
+                  reply: summarizeToolCalls(toolCalls),
+                  toolCalls,
+                  sideEffectOccurred,
+                };
+              }
+              throw new Error(`${name} returned an empty completion`);
+            }
+            return { ok: true, provider: name, model, reply, toolCalls, sideEffectOccurred };
+          }
+
+          messages.push({
+            role: "assistant",
+            content: msg.content ?? null,
+            tool_calls: calls,
+          });
+
+          for (const call of calls) {
+            const { result, sideEffect } = await input.executeTool(
+              call.function.name,
+              call.function.arguments,
+            );
+            if (sideEffect) sideEffectOccurred = true;
+            toolCalls.push({ name: call.function.name, args: call.function.arguments, result });
+            messages.push({
+              role: "tool",
+              tool_call_id: call.id,
+              content: JSON.stringify(result),
+            });
+          }
+        }
+
+        if (sideEffectOccurred) {
+          return {
+            ok: true,
+            provider: name,
+            model,
+            reply: summarizeToolCalls(toolCalls),
+            toolCalls,
+            sideEffectOccurred,
+          };
+        }
+        throw new Error(`${name} did not finish within ${MAX_AGENT_STEPS} tool steps`);
+      } catch (err) {
+        return {
+          ok: sideEffectOccurred,
+          provider: name,
+          model,
+          reply: sideEffectOccurred ? summarizeToolCalls(toolCalls) : undefined,
+          toolCalls,
+          sideEffectOccurred,
           error: err instanceof Error ? err.message : `${name} request failed`,
         };
       }

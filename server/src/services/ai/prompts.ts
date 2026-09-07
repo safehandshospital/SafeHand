@@ -100,6 +100,26 @@ export function buildChatMessages(input: {
   ];
 }
 
+export function buildAgentMessages(input: {
+  message: string;
+  departmentName?: string;
+  context?: ChatDbContext;
+}): ChatCompletionMessageParam[] {
+  const base = buildChatMessages(input);
+  const toolGuidance = [
+    "You can call tools to look up live clinic data and to book, cancel, or reschedule appointments.",
+    "Tools only ever act on the current signed-in patient — you cannot see or touch anyone else's appointments, and there is no way to act on another patient's behalf.",
+    "Look up real department names and time slot ids with the list_* tools before booking — never invent a timeSlotId or appointmentId.",
+    "Confirm the department, doctor, and time with the patient in your reply before calling book_appointment, unless they already gave clear, specific instructions.",
+    "After a booking, cancellation, or reschedule tool call succeeds, tell the patient plainly what happened.",
+  ].join(" ");
+
+  return [
+    { role: "system", content: toolGuidance },
+    ...base,
+  ];
+}
+
 export function buildOutlookMessages(input: {
   departmentName: string;
   periods: Array<{

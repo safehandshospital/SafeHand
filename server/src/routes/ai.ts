@@ -1,6 +1,6 @@
 import type { FastifyPluginAsync } from "fastify";
 import { z } from "zod";
-import { recommendSlots, chatAssistant, demandOutlook } from "../services/ai/openai.js";
+import { recommendSlots, chatAssistant, demandOutlook } from "../services/ai/provider.js";
 import { demandLevelForSlot, rankSlotsByDemand } from "../services/demand.js";
 
 const recommendSchema = z.object({
@@ -78,6 +78,7 @@ export const aiRoutes: FastifyPluginAsync = async (app) => {
       data: {
         route: "recommend-slots",
         model: ai.model,
+        provider: ai.provider,
         success: ai.ok,
         latencyMs: Date.now() - started,
         error: ai.error ?? null,
@@ -101,7 +102,7 @@ export const aiRoutes: FastifyPluginAsync = async (app) => {
     }
 
     return {
-      source: "openai",
+      source: ai.provider,
       summary: ai.summary,
       recommendations: ai.recommendations,
       slots: enriched,
@@ -115,23 +116,73 @@ export const aiRoutes: FastifyPluginAsync = async (app) => {
     }
 
     let departmentName: string | undefined;
+    const context: {
+      doctors?: Array<{ fullName: string; specialty: string }>;
+      upcomingSlots?: Array<{
+        startsAt: string;
+        remaining: number;
+        demandLevel: string;
+        doctorName: string | null;
+      }>;
+      departments?: Array<{ name: string; category: string; hours: string }>;
+    } = {};
+
     if (parsed.data.departmentId) {
       const dept = await app.prisma.department.findUnique({
         where: { id: parsed.data.departmentId },
       });
       departmentName = dept?.name;
+
+      if (dept) {
+        const [doctors, slots] = await Promise.all([
+          app.prisma.doctor.findMany({
+            where: { departmentId: dept.id },
+            select: { fullName: true, specialty: true },
+            take: 20,
+          }),
+          app.prisma.timeSlot.findMany({
+            where: { departmentId: dept.id, startsAt: { gte: new Date() } },
+            include: { doctor: { select: { fullName: true } } },
+            orderBy: { startsAt: "asc" },
+            take: 20,
+          }),
+        ]);
+
+        context.doctors = doctors;
+        context.upcomingSlots = slots
+          .map((slot) => {
+            const remaining = Math.max(0, slot.capacity - slot.bookedCount);
+            const fillRatio = slot.capacity === 0 ? 1 : slot.bookedCount / slot.capacity;
+            const demand = demandLevelForSlot(slot.startsAt, fillRatio);
+            return {
+              startsAt: slot.startsAt.toISOString(),
+              remaining,
+              demandLevel: demand.level,
+              doctorName: slot.doctor?.fullName ?? null,
+            };
+          })
+          .filter((s) => s.remaining > 0);
+      }
+    } else {
+      const departments = await app.prisma.department.findMany({
+        select: { name: true, category: true, hours: true },
+        take: 30,
+      });
+      context.departments = departments;
     }
 
     const started = Date.now();
     const result = await chatAssistant({
       message: parsed.data.message,
       departmentName,
+      context,
     });
 
     await app.prisma.aiPromptLog.create({
       data: {
         route: "assistant",
         model: result.model,
+        provider: result.provider,
         success: result.ok,
         latencyMs: Date.now() - started,
         error: result.error ?? null,
@@ -146,7 +197,7 @@ export const aiRoutes: FastifyPluginAsync = async (app) => {
       };
     }
 
-    return { source: "openai", reply: result.reply };
+    return { source: result.provider, reply: result.reply };
   });
 
   app.post("/demand-outlook", auth, async (request, reply) => {
@@ -212,6 +263,7 @@ export const aiRoutes: FastifyPluginAsync = async (app) => {
       data: {
         route: "demand-outlook",
         model: ai.model,
+        provider: ai.provider,
         success: ai.ok,
         latencyMs: Date.now() - started,
         error: ai.error ?? null,
@@ -224,7 +276,7 @@ export const aiRoutes: FastifyPluginAsync = async (app) => {
     return {
       department,
       periods,
-      source: ai.ok ? "openai" : "heuristic",
+      source: ai.ok ? ai.provider : "heuristic",
       outlook:
         ai.ok && ai.outlook
           ? ai.outlook

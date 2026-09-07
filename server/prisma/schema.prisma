@@ -191,6 +191,7 @@ model AiPromptLog {
   id        String   @id @default(cuid())
   route     String
   model     String
+  provider  String   @default("openai")
   success   Boolean
   latencyMs Int
   error     String?

@@ -59,6 +59,17 @@ function departmentAlias(text: string) {
   return null;
 }
 
+async function clinicChoices(app: Parameters<FastifyPluginAsync>[0]) {
+  const departments = await app.prisma.department.findMany({
+    select: {
+      name: true,
+      hospital: { select: { name: true } },
+    },
+    orderBy: [{ hospital: { name: "asc" } }, { name: "asc" }],
+  });
+  return departments.map((d) => `${d.name} at ${d.hospital.name}`).join(", ");
+}
+
 export const aiRoutes: FastifyPluginAsync = async (app) => {
   const auth = { preHandler: [(app as any).authenticate] };
 
@@ -166,6 +177,16 @@ export const aiRoutes: FastifyPluginAsync = async (app) => {
       /\b(same time|same date|duplicate|occupied|already booked|double book|book twice)\b/.test(text);
     const asksCapabilities =
       /\b(what can you do|how can you help|help me|help|assistant)\b/.test(text);
+    const isGreeting = /^(hi|hello|hey|yo|good morning|good afternoon|good evening)[!. ]*$/.test(text);
+
+    if (isGreeting) {
+      return {
+        source: "rules",
+        reply:
+          "Hey. I can help you find hospitals, check your appointments, and pick quieter booking times. Try “what times are free tomorrow for Cardiology?” or “show my appointments.”",
+        toolCalls: [],
+      };
+    }
 
     if (asksCapabilities && text.length < 80) {
       return {
@@ -346,6 +367,12 @@ export const aiRoutes: FastifyPluginAsync = async (app) => {
           toolCalls: [],
         };
       }
+
+      return {
+        source: "rules",
+        reply: `Which clinic should I check? Available options are: ${await clinicChoices(app)}.`,
+        toolCalls: [],
+      };
     }
 
     let departmentName: string | undefined;

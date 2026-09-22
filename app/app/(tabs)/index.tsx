@@ -17,7 +17,6 @@ import { api } from "@/lib/api";
 import { openMaps, openPhone } from "@/lib/links";
 import { useTheme } from "@/theme/ThemeProvider";
 import { useBreakpoint } from "@/hooks/useBreakpoint";
-import { useRailContent } from "@/features/layout/RailContext";
 import { space } from "@/theme/tokens";
 
 type Dept = ClinicDetail;
@@ -149,17 +148,8 @@ export default function DepartmentsScreen() {
 
   const openDepartment = (dept: Dept) => {
     setSelected(dept);
-    if (!isWide) router.push(`/department/${dept.id}`);
+    setSelectedHospitalId(dept.hospital?.id ?? selectedHospitalId);
   };
-
-  const rail = selected ? (
-    <ClinicDetailRail
-      clinic={selected}
-      onBook={() => router.push(`/department/${selected.id}`)}
-    />
-  ) : null;
-
-  useRailContent(isWide ? rail : null, [isWide, selected], "Clinic");
 
   return (
     <Screen
@@ -441,6 +431,17 @@ export default function DepartmentsScreen() {
                 );
               })}
             </View>
+
+            {selected ? (
+              <Surface outlined style={styles.detailPanel}>
+                <ClinicDetailRail
+                  clinic={selected}
+                  onBook={() => router.push(`/department/${selected.id}`)}
+                  bookFirst
+                  bookLabel="Book this department"
+                />
+              </Surface>
+            ) : null}
           </View>
         ) : null}
       </View>
@@ -483,6 +484,9 @@ const styles = StyleSheet.create({
     alignItems: "flex-end",
     justifyContent: "space-between",
     gap: space[3],
+  },
+  detailPanel: {
+    marginTop: space[2],
   },
   metaBlock: {
     gap: space[2],

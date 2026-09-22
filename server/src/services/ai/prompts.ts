@@ -185,3 +185,50 @@ export function buildBusyHoursMessages(input: {
     },
   ];
 }
+
+export type BookingAdviceInput = {
+  departmentName: string;
+  hospitalName?: string;
+  requested: {
+    label: string;
+    weekday: number;
+    hour: number;
+    level: string;
+    score: number;
+    fillRatio: number;
+  };
+  usuallyBusy: boolean;
+  medianScore: number;
+  busyWindows: Array<{
+    weekday: number;
+    hour: number;
+    level: string;
+    score: number;
+  }>;
+  quieterAlternatives: Array<{ label: string; level: string; score: number }>;
+};
+
+export function buildBookingAdviceMessages(
+  input: BookingAdviceInput,
+): ChatCompletionMessageParam[] {
+  return [
+    {
+      role: "system",
+      content:
+        "You are SafeHand's AI scheduling assistant talking directly to a patient who is choosing an appointment time. In 2-3 short plain-language sentences, say whether the time they picked is usually busy at that hospital and what that means for their wait. If it is busy, advise shifting to one of the quieter alternatives. Never give medical advice and never invent data. Return JSON only: { headline: string, advice: string }.",
+    },
+    {
+      role: "user",
+      content: JSON.stringify({
+        hospital: input.hospitalName ?? null,
+        department: input.departmentName,
+        requestedTime: input.requested,
+        usuallyBusy: input.usuallyBusy,
+        clinicMedianScore: input.medianScore,
+        busiestWindows: input.busyWindows.slice(0, 6),
+        quieterAlternatives: input.quieterAlternatives.slice(0, 3),
+      }),
+    },
+  ];
+}
+

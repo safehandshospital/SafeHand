@@ -24,7 +24,8 @@ const rescheduleSchema = z.object({
   newTimeSlotId: z.string().min(1),
 });
 
-const CUSTOM_BOOKING_DAYS_AHEAD = 14;
+/** Patients can schedule two years ahead; those slots are created on demand. */
+const CUSTOM_BOOKING_DAYS_AHEAD = 730;
 const CUSTOM_BOOKING_HOURS = new Set([8, 9, 10, 11, 13, 14, 15, 16]);
 
 function isUniqueOrOverbookError(err: unknown) {
@@ -67,7 +68,7 @@ function validateCustomStartsAt(startsAt: Date): string | null {
   latest.setDate(latest.getDate() + CUSTOM_BOOKING_DAYS_AHEAD);
   latest.setHours(23, 59, 59, 999);
   if (startsAt.getTime() > latest.getTime()) {
-    return "Choose a date within the next 14 days";
+    return "Choose a date within the next 2 years";
   }
 
   if (startsAt.getDay() === 0) {

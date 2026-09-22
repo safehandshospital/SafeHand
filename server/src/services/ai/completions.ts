@@ -5,10 +5,12 @@ import type {
 } from "openai/resources/chat/completions";
 import {
   buildAgentMessages,
+  buildBookingAdviceMessages,
   buildBusyHoursMessages,
   buildChatMessages,
   buildOutlookMessages,
   buildRecommendMessages,
+  type BookingAdviceInput,
   type ChatDbContext,
   type SlotInput,
 } from "./prompts.js";
@@ -57,6 +59,16 @@ export type BusyHoursResult = {
   model: string;
   summary?: string;
   busyHours?: BusyHourPrediction[];
+  error?: string;
+};
+
+/** Patient-facing verdict on one exact booking time. */
+export type BookingAdviceResult = {
+  ok: boolean;
+  provider: string;
+  model: string;
+  headline?: string;
+  advice?: string;
   error?: string;
 };
 
@@ -130,6 +142,7 @@ export type ChatProvider = {
       slotCount: number;
     }>;
   }): Promise<BusyHoursResult>;
+  bookingAdvice(input: BookingAdviceInput): Promise<BookingAdviceResult>;
   chatAgent(input: {
     message: string;
     departmentName?: string;
@@ -266,6 +279,43 @@ export function createChatProvider(opts: {
           model: adminModel || model,
           summary: parsed.summary ?? "Predicted busiest clinic windows from current demand.",
           busyHours: (parsed.busyHours ?? []).slice(0, 6),
+        };
+      } catch (err) {
+        return {
+          ok: false,
+          provider: name,
+          model: adminModel || model,
+          error: err instanceof Error ? err.message : `${name} request failed`,
+        };
+      }
+    },
+
+    async bookingAdvice(input) {
+      try {
+        const completion = await client.chat.completions.create({
+          model: adminModel || model,
+          response_format: { type: "json_object" },
+          messages: buildBookingAdviceMessages(input),
+          temperature: 0.3,
+          max_tokens: 400,
+        });
+
+        const raw = completion.choices[0]?.message?.content;
+        if (isBlank(raw)) {
+          throw new Error(`${name} returned an empty completion`);
+        }
+
+        const parsed = JSON.parse(raw as string) as {
+          headline?: string;
+          advice?: string;
+        };
+
+        return {
+          ok: true,
+          provider: name,
+          model: adminModel || model,
+          headline: parsed.headline,
+          advice: parsed.advice,
         };
       } catch (err) {
         return {

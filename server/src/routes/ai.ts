@@ -1,7 +1,7 @@
 import type { FastifyPluginAsync } from "fastify";
 import { z } from "zod";
-import { recommendSlots, chatAssistantAgent, demandOutlook, predictBusyHours } from "../services/ai/provider.js";
-import { demandLevelForSlot, rankSlotsByDemand } from "../services/demand.js";
+import { bookingAdvice, recommendSlots, chatAssistantAgent, demandOutlook, predictBusyHours } from "../services/ai/provider.js";
+import { assessRequestedWindow, bucketDemandByWindow, demandLevelForSlot, quieterWindows, rankSlotsByDemand } from "../services/demand.js";
 import { assistantTools, executeTool } from "../services/ai/tools.js";
 
 const recommendSchema = z.object({
@@ -28,6 +28,28 @@ const chatSchema = z.object({
 const outlookSchema = z.object({
   departmentId: z.string().min(1),
 });
+
+const bookingAdviceSchema = z.object({
+  departmentId: z.string().min(1),
+  startsAt: z.string().datetime(),
+});
+
+const WEEKDAY_NAMES = [
+  "Sunday",
+  "Monday",
+  "Tuesday",
+  "Wednesday",
+  "Thursday",
+  "Friday",
+  "Saturday",
+];
+
+/** How far ahead a clinic is profiled when judging "usually busy" patterns. */
+const BOOKING_ADVICE_HORIZON_DAYS = 60;
+
+function windowLabel(weekday: number, hour: number) {
+  return `${WEEKDAY_NAMES[weekday] ?? "Day"} ${String(hour).padStart(2, "0")}:00`;
+}
 
 function formatDateTime(value: Date) {
   return new Intl.DateTimeFormat("en-GH", {
@@ -592,6 +614,157 @@ export const aiRoutes: FastifyPluginAsync = async (app) => {
       source: result.provider,
       reply: result.reply,
       toolCalls: result.toolCalls.map((t) => ({ name: t.name, result: t.result })),
+    };
+  });
+
+  /**
+   * AI booking advisor: "is this exact time usually busy at this hospital?".
+   * Public on purpose — it exposes the same slot metadata as GET /api/slots.
+   */
+  app.post("/booking-advice", async (request, reply) => {
+    const parsed = bookingAdviceSchema.safeParse(request.body);
+    if (!parsed.success) {
+      return reply.code(400).send({ error: parsed.error.flatten() });
+    }
+
+    const startsAt = new Date(parsed.data.startsAt);
+    if (Number.isNaN(startsAt.getTime())) {
+      return reply.code(400).send({ error: "Invalid appointment date/time" });
+    }
+
+    const department = await app.prisma.department.findUnique({
+      where: { id: parsed.data.departmentId },
+      include: { hospital: { select: { id: true, name: true, city: true } } },
+    });
+    if (!department) {
+      return reply.code(404).send({ error: "Department not found" });
+    }
+
+    const now = new Date();
+    const horizon = new Date(
+      now.getTime() + BOOKING_ADVICE_HORIZON_DAYS * 24 * 60 * 60 * 1000,
+    );
+    const slots = await app.prisma.timeSlot.findMany({
+      where: {
+        departmentId: department.id,
+        startsAt: { gte: now, lte: horizon },
+      },
+      select: { startsAt: true, capacity: true, bookedCount: true },
+      orderBy: { startsAt: "asc" },
+    });
+
+    const windows = bucketDemandByWindow(slots);
+    const requestedSlot = slots.find((s) => s.startsAt.getTime() === startsAt.getTime());
+    const bucket = windows.find(
+      (w) => w.weekday === startsAt.getDay() && w.hour === startsAt.getHours(),
+    );
+    const requestedFill = requestedSlot
+      ? requestedSlot.capacity === 0
+        ? 1
+        : requestedSlot.bookedCount / requestedSlot.capacity
+      : (bucket?.fillRatio ?? 0);
+
+    const assessment = assessRequestedWindow({
+      requested: {
+        weekday: startsAt.getDay(),
+        hour: startsAt.getHours(),
+        fillRatio: requestedFill,
+      },
+      windows,
+    });
+
+    const alternatives = quieterWindows(slots, { excludeStartsAt: startsAt, limit: 3 }).map(
+      (alt) => ({
+        startsAt: alt.startsAt.toISOString(),
+        label: formatDateTime(alt.startsAt),
+        demandLevel: alt.level,
+        demandScore: alt.score,
+      }),
+    );
+
+    const requestedLabel = formatDateTime(startsAt);
+    const hospitalLabel = department.hospital?.name
+      ? `${department.name} at ${department.hospital.name}`
+      : department.name;
+    const started = Date.now();
+    const ai = await bookingAdvice({
+      departmentName: department.name,
+      hospitalName: department.hospital?.name,
+      requested: {
+        label: requestedLabel,
+        weekday: startsAt.getDay(),
+        hour: startsAt.getHours(),
+        level: assessment.level,
+        score: assessment.score,
+        fillRatio: Number(requestedFill.toFixed(3)),
+      },
+      usuallyBusy: assessment.usuallyBusy,
+      medianScore: assessment.medianScore,
+      busyWindows: assessment.busiest.map((w) => ({
+        weekday: w.weekday,
+        hour: w.hour,
+        level: w.level,
+        score: w.score,
+      })),
+      quieterAlternatives: alternatives.map((alt) => ({
+        label: alt.label,
+        level: alt.demandLevel,
+        score: alt.demandScore,
+      })),
+    });
+
+    await app.prisma.aiPromptLog.create({
+      data: {
+        route: "booking-advice",
+        model: ai.model,
+        provider: ai.provider,
+        success: ai.ok,
+        latencyMs: Date.now() - started,
+        error: ai.error ?? null,
+      },
+    });
+
+    const busiestLabel = assessment.busiest[0]
+      ? windowLabel(assessment.busiest[0].weekday, assessment.busiest[0].hour)
+      : null;
+    const quietest = alternatives[0];
+
+    return {
+      source: ai.ok ? ai.provider : "heuristic",
+      department: {
+        id: department.id,
+        name: department.name,
+        hospital: department.hospital ?? null,
+      },
+      startsAt: startsAt.toISOString(),
+      label: requestedLabel,
+      demandLevel: assessment.level,
+      demandScore: assessment.score,
+      fillRatio: Number(requestedFill.toFixed(3)),
+      usuallyBusy: assessment.usuallyBusy,
+      headline:
+        ai.ok && ai.headline
+          ? ai.headline
+          : assessment.usuallyBusy
+            ? "This time is usually busy"
+            : assessment.level === "MEDIUM"
+              ? "A moderately busy window"
+              : "Usually a quiet window",
+      advice:
+        ai.ok && ai.advice
+          ? ai.advice
+          : assessment.usuallyBusy
+            ? `${requestedLabel} is one of the busier windows at ${hospitalLabel}${busiestLabel ? `, with peaks clustering around ${busiestLabel}` : ""}. Expect a longer wait, or pick a quieter time${quietest ? ` such as ${quietest.label}` : " later in the week"}.`
+            : `${requestedLabel} sits outside ${hospitalLabel}'s busiest windows, so you should be seen with less waiting.`,
+      busyWindows: assessment.busiest.map((w) => ({
+        label: windowLabel(w.weekday, w.hour),
+        weekday: w.weekday,
+        hour: w.hour,
+        level: w.level,
+        score: w.score,
+      })),
+      medianScore: assessment.medianScore,
+      alternatives,
     };
   });
 

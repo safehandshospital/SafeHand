@@ -215,6 +215,9 @@ const DEPARTMENTS = [
   },
 ];
 
+/** Seeded clinics open ~2 months of slots so local matches the booking horizon. */
+const SEED_DAYS_AHEAD = Number(process.env.BOOKING_HORIZON_DAYS) || 60;
+
 function addDays(base: Date, days: number) {
   const d = new Date(base);
   d.setDate(d.getDate() + days);
@@ -609,7 +612,9 @@ const DOCTORS: Record<
       },
     ];
 
-    for (let dayOffset = 0; dayOffset < 14; dayOffset++) {
+    const snapshotKeys = new Set<string>();
+
+    for (let dayOffset = 0; dayOffset < SEED_DAYS_AHEAD; dayOffset++) {
       const day = addDays(today, dayOffset);
       const weekday = day.getDay();
       if (weekday === 0) continue;
@@ -638,7 +643,10 @@ const DOCTORS: Record<
 
         const fill = capacity ? bookedCount / capacity : 0;
         const demand = demandLevelForSlot(startsAt, fill);
-        await prisma.demandSnapshot.create({
+        const snapshotKey = `${weekday}-${hour}`;
+        if (!snapshotKeys.has(snapshotKey)) {
+          snapshotKeys.add(snapshotKey);
+          await prisma.demandSnapshot.create({
           data: {
             departmentId: department.id,
             slotHour: hour,
@@ -649,6 +657,8 @@ const DOCTORS: Record<
             rationale: `Seeded density for ${dept.name}`,
           },
         });
+
+        }
 
         // Seed richer sample appointments on near-term booked slots
         if (bookedCount > 0 && dayOffset < 3) {

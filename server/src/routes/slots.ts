@@ -2,6 +2,10 @@ import type { FastifyPluginAsync } from "fastify";
 import { z } from "zod";
 import { demandLevelForSlot } from "../services/demand.js";
 
+/** Slots are materialised ~2 months ahead; later dates are booked on demand. */
+const DEFAULT_HORIZON_DAYS = 60;
+const MAX_SLOTS = 900;
+
 const querySchema = z.object({
   departmentId: z.string().min(1),
   from: z.string().datetime().optional(),
@@ -20,7 +24,7 @@ export const slotRoutes: FastifyPluginAsync = async (app) => {
       : new Date();
     const to = parsed.data.to
       ? new Date(parsed.data.to)
-      : new Date(Date.now() + 14 * 24 * 60 * 60 * 1000);
+      : new Date(Date.now() + DEFAULT_HORIZON_DAYS * 24 * 60 * 60 * 1000);
 
     const slots = await app.prisma.timeSlot.findMany({
       where: {
@@ -30,6 +34,7 @@ export const slotRoutes: FastifyPluginAsync = async (app) => {
       include: {
         doctor: { select: { id: true, fullName: true, specialty: true, avatarUrl: true } },
       },
+      take: MAX_SLOTS,
       orderBy: { startsAt: "asc" },
     });
 

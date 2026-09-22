@@ -70,12 +70,20 @@ function Fact({ label, value }: { label: string; value: string }) {
 type Props = {
   clinic: ClinicDetail;
   onBook: () => void;
+  /** Puts the primary booking action above the detail sections (clinics drill-down). */
+  bookFirst?: boolean;
+  bookLabel?: string;
 };
 
 /** Clinic detail panel for the right rail. */
-export function ClinicDetailRail({ clinic, onBook }: Props) {
+export function ClinicDetailRail({
+  clinic,
+  onBook,
+  bookFirst = false,
+  bookLabel = "Book appointment",
+}: Props) {
   const { colors } = useTheme();
-  const lead = clinic.doctors?.[0] ?? null;
+  const doctors = clinic.doctors ?? [];
   const services = clinic.services ?? [];
   const recent = clinic.recentAppointments ?? [];
   const hospitalPlace = [clinic.hospital?.name, clinic.hospital?.city]
@@ -88,8 +96,22 @@ export function ClinicDetailRail({ clinic, onBook }: Props) {
     .filter(Boolean)
     .join(", ");
 
+  const bookAction = (
+    <View style={{ gap: space[1] }}>
+      <Button label={bookLabel} variant="accent" onPress={onBook} />
+      {bookFirst ? (
+        <AppText variant="caption" tone="tertiary">
+          {(clinic.openSlots ?? 0) > 0
+            ? `${clinic.openSlots} open times ahead · the AI advisor marks the hours this hospital is usually busiest`
+            : "Times are created on request · book any open date up to 2 years ahead"}
+        </AppText>
+      ) : null}
+    </View>
+  );
+
   return (
     <View style={styles.root}>
+      {bookFirst ? bookAction : null}
       <ClinicCover
         name={clinic.name}
         imageUrl={clinic.imageUrl}
@@ -184,14 +206,22 @@ export function ClinicDetailRail({ clinic, onBook }: Props) {
         </View>
       ) : null}
 
-      {lead ? (
-        <PartyCard
-          size="md"
-          name={lead.fullName}
-          role="Lead clinician"
-          subtitle={lead.specialty}
-          imageUrl={lead.avatarUrl}
-        />
+      {doctors.length > 0 ? (
+        <View style={{ gap: space[2] }}>
+          <AppText variant="label" tone="tertiary">
+            Doctors
+          </AppText>
+          {doctors.map((doctor, index) => (
+            <PartyCard
+              key={doctor.id}
+              size="md"
+              name={doctor.fullName}
+              role={index === 0 ? "Lead clinician" : "Clinician"}
+              subtitle={doctor.specialty}
+              imageUrl={doctor.avatarUrl}
+            />
+          ))}
+        </View>
       ) : null}
 
       <View style={{ gap: space[2] }}>
@@ -239,7 +269,7 @@ export function ClinicDetailRail({ clinic, onBook }: Props) {
         )}
       </View>
 
-      <Button label="Book appointment" variant="accent" onPress={onBook} />
+      {bookFirst ? null : bookAction}
     </View>
   );
 }

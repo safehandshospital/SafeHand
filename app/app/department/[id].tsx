@@ -48,6 +48,34 @@ type Slot = {
   } | null;
 };
 
+type Advice = {
+  source: string;
+  headline: string;
+  advice: string;
+  usuallyBusy: boolean;
+  demandLevel: "LOW" | "MEDIUM" | "HIGH";
+  demandScore: number;
+  label: string;
+  busyWindows: Array<{
+    label: string;
+    weekday: number;
+    hour: number;
+    level: "LOW" | "MEDIUM" | "HIGH";
+    score: number;
+  }>;
+  alternatives: Array<{
+    startsAt: string;
+    label: string;
+    demandLevel: "LOW" | "MEDIUM" | "HIGH";
+    demandScore: number;
+  }>;
+};
+
+/** Patients can book two years ahead, matching the server rule. */
+const BOOKING_HORIZON_DAYS = 730;
+/** Materialised open days shown before the "show all" toggle kicks in. */
+const DAYS_SHOWN_FIRST = 14;
+
 type WebPickerInputProps = {
   kind: "date" | "time";
   value: string;
@@ -143,6 +171,9 @@ function BookingWorkspace() {
   const [topic, setTopic] = useState("");
   const [purpose, setPurpose] = useState("");
   const [notes, setNotes] = useState("");
+  const [showAllDays, setShowAllDays] = useState(false);
+  const [advice, setAdvice] = useState<Advice | null>(null);
+  const [adviceLoading, setAdviceLoading] = useState(false);
 
   const load = useCallback(async () => {
     if (!id) return;
@@ -202,6 +233,12 @@ function BookingWorkspace() {
     }));
   }, [available]);
 
+  /** Two weeks stay up front; the whole materialised horizon is one tap away. */
+  const visibleDays = useMemo(
+    () => (showAllDays ? days : days.slice(0, DAYS_SHOWN_FIRST)),
+    [days, showAllDays],
+  );
+
   const timesForDay = useMemo(() => {
     if (!day) return [];
     return available.filter((s) => dayKey(s.startsAt) === day);
@@ -210,7 +247,7 @@ function BookingWorkspace() {
   const customDateBounds = useMemo(() => {
     const now = new Date();
     const max = new Date(now);
-    max.setDate(max.getDate() + 13);
+    max.setDate(max.getDate() + BOOKING_HORIZON_DAYS);
     return {
       min: dayKey(now),
       max: dayKey(max),
@@ -228,6 +265,50 @@ function BookingWorkspace() {
   useEffect(() => {
     if (!day && days[0]) setDay(days[0].key);
   }, [day, days]);
+
+  // The AI advisor reads the exact time the patient picked, says whether this
+  // hospital is usually busy then, and offers quieter nearby windows.
+  useEffect(() => {
+    if (step !== "details" || !selectedStartsAt || !id) {
+      setAdvice(null);
+      return;
+    }
+
+    let cancelled = false;
+    setAdviceLoading(true);
+    api
+      .bookingAdvice({ departmentId: id, startsAt: selectedStartsAt })
+      .then((res) => {
+        if (!cancelled) setAdvice(res);
+      })
+      .catch(() => {
+        if (!cancelled) setAdvice(null);
+      })
+      .finally(() => {
+        if (!cancelled) setAdviceLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [id, selectedStartsAt, step]);
+
+  /** Switch the visit to a time the advisor flagged as quieter. */
+  const switchToTime = (startsAtIso: string) => {
+    const match = available.find(
+      (slot) =>
+        new Date(slot.startsAt).getTime() === new Date(startsAtIso).getTime(),
+    );
+    if (match) {
+      setSelectedId(match.id);
+      setCustomStartsAt(null);
+    } else {
+      setSelectedId(null);
+      setCustomStartsAt(startsAtIso);
+    }
+    setAdvice(null);
+    setStep("details");
+  };
 
   const goBack = () => {
     if (step === "time") setStep("date");
@@ -303,7 +384,7 @@ function BookingWorkspace() {
       startsAt.getDay() === 0 ||
       startsAt.getTime() > maxDate.getTime()
     ) {
-      setError("Choose a Monday to Saturday date within the next 14 days.");
+      setError("Choose a Monday to Saturday date within the next 2 years.");
       return;
     }
     if (startsAt.getTime() <= Date.now()) {
@@ -394,7 +475,8 @@ function BookingWorkspace() {
           <View style={styles.sectionIntro}>
             <AppText variant="h2">Pick a day</AppText>
             <AppText variant="caption" tone="secondary">
-              Choose an open day, or enter your own exact date and time.
+              Choose an open day, or enter your own exact date and time. Open
+              days run 8 weeks ahead and exact times reach 2 years.
             </AppText>
           </View>
           <Surface outlined style={styles.customCard}>
@@ -429,7 +511,7 @@ function BookingWorkspace() {
                 />
               )}
               <AppText variant="caption" tone="tertiary">
-                Monday to Saturday, within the next 14 days.
+                Monday to Saturday, up to 2 years ahead.
               </AppText>
             </View>
             <View style={styles.pickerBlock}>
@@ -467,8 +549,19 @@ function BookingWorkspace() {
               onPress={chooseCustomTime}
             />
           </Surface>
+          {days.length > DAYS_SHOWN_FIRST ? (
+            <Button
+              label={
+                showAllDays
+                  ? "Show fewer days"
+                  : `Show all ${days.length} open days`
+              }
+              variant="secondary"
+              onPress={() => setShowAllDays((prev) => !prev)}
+            />
+          ) : null}
           <View style={[styles.dayGrid, isPhone && styles.dayGridPhone]}>
-            {days.map((d) => {
+            {visibleDays.map((d) => {
               const active = day === d.key;
               return (
                 <PressableScale
@@ -515,7 +608,8 @@ function BookingWorkspace() {
               {day ? formatCalendarDate(parseDayKey(day)) : "Pick a time"}
             </AppText>
             <AppText variant="caption" tone="secondary">
-              Choose one open slot.
+              Choose one open slot. Busy times are still bookable — the AI
+              advisor will tell you how busy they usually are.
             </AppText>
           </View>
           <View style={[styles.timeGrid, isPhone && styles.timeGridPhone]}>
@@ -578,7 +672,93 @@ function BookingWorkspace() {
         <View style={styles.section}>
           <View style={styles.sectionIntro}>
             <AppText variant="h2">Visit details</AppText>
+            <AppText variant="caption" tone="secondary">
+              SafeHand AI checks the exact time you picked against how busy this
+              hospital normally gets.
+            </AppText>
           </View>
+          {adviceLoading ? (
+            <Surface outlined style={styles.advisorCard}>
+              <AppText variant="label" tone="tertiary">
+                AI advisor
+              </AppText>
+              <AppText variant="caption" tone="secondary">
+                Checking how busy this hospital usually is at that time…
+              </AppText>
+              <ActivityIndicator color={colors.accent} />
+            </Surface>
+          ) : null}
+
+          {advice ? (
+            <Surface
+              outlined
+              style={[
+                styles.advisorCard,
+                {
+                  borderColor: advice.usuallyBusy
+                    ? colors.warning
+                    : colors.hairline,
+                },
+              ]}
+            >
+              <View style={styles.advisorHead}>
+                <AppText variant="label" tone="tertiary">
+                  AI advisor · {advice.source}
+                </AppText>
+                <AppText
+                  variant="caption"
+                  style={{
+                    color: advice.usuallyBusy ? colors.warning : colors.success,
+                  }}
+                >
+                  {advice.usuallyBusy ? "usually busy" : "usually calm"}
+                </AppText>
+              </View>
+              <AppText variant="h2">{advice.headline}</AppText>
+              <AppText variant="body" tone="secondary">
+                {advice.advice}
+              </AppText>
+              {advice.busyWindows.length > 0 ? (
+                <AppText variant="caption" tone="tertiary">
+                  Busiest windows here:{" "}
+                  {advice.busyWindows
+                    .slice(0, 3)
+                    .map((w) => w.label)
+                    .join(" · ")}
+                </AppText>
+              ) : null}
+              {advice.alternatives.length > 0 ? (
+                <View style={styles.field}>
+                  <AppText variant="label" tone="tertiary">
+                    Quieter times nearby
+                  </AppText>
+                  <View style={styles.altRow}>
+                    {advice.alternatives.map((alt) => (
+                      <PressableScale
+                        key={alt.startsAt}
+                        onPress={() => switchToTime(alt.startsAt)}
+                        style={styles.altPress}
+                      >
+                        <Surface outlined style={styles.altCard}>
+                          <AppText variant="caption" numberOfLines={1}>
+                            {alt.label}
+                          </AppText>
+                          <AppText
+                            variant="caption"
+                            tone="tertiary"
+                            numberOfLines={1}
+                          >
+                            {alt.demandLevel.toLowerCase()} demand
+                          </AppText>
+                        </Surface>
+                      </PressableScale>
+                    ))}
+                  </View>
+                </View>
+              ) : null}
+            </Surface>
+          ) : null}
+
           {selected ? (
             <Surface outlined style={styles.summaryCard}>
               <DateTimeBlock
@@ -670,6 +850,19 @@ function BookingWorkspace() {
         <View style={styles.section}>
           <View style={styles.sectionIntro}>
             <AppText variant="h2">Confirm booking</AppText>
+            {advice ? (
+              <AppText
+                variant="caption"
+                style={{
+                  color: advice.usuallyBusy ? colors.warning : colors.success,
+                }}
+              >
+                AI advisor: {advice.headline.toLowerCase()}
+                {advice.usuallyBusy
+                  ? " — the next step is still yours."
+                  : " — expect a smoother visit."}
+              </AppText>
+            ) : null}
           </View>
           <Surface outlined style={styles.summaryCard}>
             <AppText variant="label" tone="tertiary">
@@ -875,6 +1068,31 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     flexWrap: "wrap",
     gap: space[2],
+  },
+  advisorCard: {
+    gap: space[2],
+    width: "100%",
+  },
+  advisorHead: {
+    flexDirection: "row",
+    alignItems: "baseline",
+    justifyContent: "space-between",
+    gap: space[2],
+  },
+  altRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: space[2],
+  },
+  altPress: {
+    width: "48%",
+    maxWidth: "48%",
+  },
+  altCard: {
+    gap: 2,
+    width: "100%",
+    minHeight: 56,
+    justifyContent: "center",
   },
   summaryCard: {
     gap: space[3],

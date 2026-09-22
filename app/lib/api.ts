@@ -257,6 +257,40 @@ export const api = {
       method: "POST",
       body: JSON.stringify(body),
     }),
+  bookingAdvice: (body: { departmentId: string; startsAt: string }) =>
+    request<{
+      source: string;
+      department: {
+        id: string;
+        name: string;
+        hospital?: { id: string; name: string; city?: string } | null;
+      };
+      startsAt: string;
+      label: string;
+      demandLevel: "LOW" | "MEDIUM" | "HIGH";
+      demandScore: number;
+      fillRatio: number;
+      usuallyBusy: boolean;
+      headline: string;
+      advice: string;
+      busyWindows: Array<{
+        label: string;
+        weekday: number;
+        hour: number;
+        level: "LOW" | "MEDIUM" | "HIGH";
+        score: number;
+      }>;
+      medianScore: number;
+      alternatives: Array<{
+        startsAt: string;
+        label: string;
+        demandLevel: "LOW" | "MEDIUM" | "HIGH";
+        demandScore: number;
+      }>;
+    }>("/api/ai/booking-advice", {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
   demandOutlook: (departmentId: string) =>
     request<{
       source: string;

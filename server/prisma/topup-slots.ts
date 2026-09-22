@@ -3,7 +3,7 @@ import { PrismaClient } from "@prisma/client";
 
 const prisma = new PrismaClient();
 
-const DAYS_AHEAD = Number(process.env.TOPUP_DAYS) || 14;
+const DAYS_AHEAD = Number(process.env.BOOKING_HORIZON_DAYS ?? process.env.TOPUP_DAYS) || 60;
 const HOURS = [8, 9, 10, 11, 13, 14, 15, 16];
 
 function addDays(base: Date, days: number) {

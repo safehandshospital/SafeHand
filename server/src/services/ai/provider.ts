@@ -6,11 +6,12 @@ import type {
   BusyHoursResult,
   ChatProvider,
   ChatResult,
+  BookingAdviceResult,
   OutlookResult,
   RecommendResult,
   ToolExecutor,
 } from "./completions.js";
-import type { ChatDbContext, SlotInput } from "./prompts.js";
+import type { BookingAdviceInput, ChatDbContext, SlotInput } from "./prompts.js";
 
 // AgentRouter is the primary provider (free/pooled), OpenAI is the reliable fallback.
 // See docs/agentrouter.md for why: AgentRouter can silently return empty completions
@@ -117,4 +118,13 @@ export async function predictBusyHours(input: {
   }>;
 }): Promise<BusyHoursResult> {
   return withFallback((p) => p.predictBusyHours(input)) as Promise<BusyHoursResult>;
+}
+
+
+/**
+ * Patient-facing advice for one exact booking time: is this usually busy here,
+ * and which quieter windows nearby are a better choice?
+ */
+export async function bookingAdvice(input: BookingAdviceInput): Promise<BookingAdviceResult> {
+  return withFallback((p) => p.bookingAdvice(input)) as Promise<BookingAdviceResult>;
 }

@@ -112,7 +112,12 @@ export function AppShell({
                   <AppText
                     variant="caption"
                     tone={item.active ? "accent" : "primary"}
-                    style={styles.navLabel}
+                    style={[
+                      styles.navLabel,
+                      item.active && item.key === "profile"
+                        ? styles.profileActiveLabel
+                        : null,
+                    ]}
                   >
                     {item.label}
                   </AppText>
@@ -189,6 +194,9 @@ const styles = StyleSheet.create({
     lineHeight: 18,
     textTransform: "none",
     letterSpacing: 0,
+  },
+  profileActiveLabel: {
+    color: "#DC2626",
   },
   main: {
     flex: 1,

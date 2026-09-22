@@ -43,6 +43,20 @@ function startOfDay(date: Date) {
   return copy;
 }
 
+function endOfDay(date: Date) {
+  const copy = startOfDay(date);
+  copy.setHours(23, 59, 59, 999);
+  return copy;
+}
+
+function patientClinicDayLockKey(userId: string, departmentId: string, startsAt: Date) {
+  return `${userId}:${departmentId}:${startOfDay(startsAt).toISOString()}`;
+}
+
+function duplicateClinicDayMessage(departmentName: string) {
+  return `You already have a booked ${departmentName} appointment on this date. Please cancel it first or choose another date.`;
+}
+
 function validateCustomStartsAt(startsAt: Date): string | null {
   const now = new Date();
   if (startsAt.getTime() <= now.getTime()) {
@@ -143,6 +157,30 @@ export const appointmentRoutes: FastifyPluginAsync = async (app) => {
     });
 
     const appointment = await app.prisma.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtext(${patientClinicDayLockKey(
+        sub,
+        slot.departmentId,
+        slot.startsAt,
+      )}))`;
+
+      const duplicateDay = await tx.appointment.findFirst({
+        where: {
+          userId: sub,
+          departmentId: slot.departmentId,
+          status: "BOOKED",
+          timeSlot: {
+            startsAt: {
+              gte: startOfDay(slot.startsAt),
+              lte: endOfDay(slot.startsAt),
+            },
+          },
+        },
+        select: { id: true },
+      });
+      if (duplicateDay) {
+        throw new Error("DUPLICATE_CLINIC_DAY");
+      }
+
       const claimed = await tx.timeSlot.updateMany({
         where: {
           id: slot.id,
@@ -180,11 +218,20 @@ export const appointmentRoutes: FastifyPluginAsync = async (app) => {
         },
       });
     }).catch(async (err) => {
+      if (err instanceof Error && err.message === "DUPLICATE_CLINIC_DAY") {
+        return "DUPLICATE_CLINIC_DAY" as const;
+      }
       if (isUniqueOrOverbookError(err)) {
         return null;
       }
       throw err;
     });
+
+    if (appointment === "DUPLICATE_CLINIC_DAY") {
+      return reply
+        .code(409)
+        .send({ error: duplicateClinicDayMessage(slot.department.name) });
+    }
 
     if (!appointment) {
       return reply.code(409).send({ error: "Only one patient can book that time. Please choose another slot." });
@@ -243,6 +290,30 @@ export const appointmentRoutes: FastifyPluginAsync = async (app) => {
     });
 
     const appointment = await app.prisma.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtext(${patientClinicDayLockKey(
+        sub,
+        department.id,
+        startsAt,
+      )}))`;
+
+      const duplicateDay = await tx.appointment.findFirst({
+        where: {
+          userId: sub,
+          departmentId: department.id,
+          status: "BOOKED",
+          timeSlot: {
+            startsAt: {
+              gte: startOfDay(startsAt),
+              lte: endOfDay(startsAt),
+            },
+          },
+        },
+        select: { id: true },
+      });
+      if (duplicateDay) {
+        throw new Error("DUPLICATE_CLINIC_DAY");
+      }
+
       const slot = await tx.timeSlot.upsert({
         where: {
           departmentId_startsAt: {
@@ -300,9 +371,18 @@ export const appointmentRoutes: FastifyPluginAsync = async (app) => {
         },
       });
     }).catch((err) => {
+      if (err instanceof Error && err.message === "DUPLICATE_CLINIC_DAY") {
+        return "DUPLICATE_CLINIC_DAY" as const;
+      }
       if (isUniqueOrOverbookError(err)) return null;
       throw err;
     });
+
+    if (appointment === "DUPLICATE_CLINIC_DAY") {
+      return reply
+        .code(409)
+        .send({ error: duplicateClinicDayMessage(department.name) });
+    }
 
     if (!appointment) {
       return reply
@@ -387,6 +467,7 @@ export const appointmentRoutes: FastifyPluginAsync = async (app) => {
 
     const newSlot = await app.prisma.timeSlot.findUnique({
       where: { id: parsed.data.newTimeSlotId },
+      include: { department: true },
     });
     if (!newSlot) {
       return reply.code(404).send({ error: "New time slot not found" });
@@ -396,6 +477,31 @@ export const appointmentRoutes: FastifyPluginAsync = async (app) => {
     }
 
     const updated = await app.prisma.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtext(${patientClinicDayLockKey(
+        appointment.userId,
+        newSlot.departmentId,
+        newSlot.startsAt,
+      )}))`;
+
+      const duplicateDay = await tx.appointment.findFirst({
+        where: {
+          id: { not: appointment.id },
+          userId: appointment.userId,
+          departmentId: newSlot.departmentId,
+          status: "BOOKED",
+          timeSlot: {
+            startsAt: {
+              gte: startOfDay(newSlot.startsAt),
+              lte: endOfDay(newSlot.startsAt),
+            },
+          },
+        },
+        select: { id: true },
+      });
+      if (duplicateDay) {
+        throw new Error("DUPLICATE_CLINIC_DAY");
+      }
+
       const claimed = await tx.timeSlot.updateMany({
         where: {
           id: newSlot.id,
@@ -425,9 +531,18 @@ export const appointmentRoutes: FastifyPluginAsync = async (app) => {
         include: { department: true, timeSlot: true, doctor: true },
       });
     }).catch((err) => {
+      if (err instanceof Error && err.message === "DUPLICATE_CLINIC_DAY") {
+        return "DUPLICATE_CLINIC_DAY" as const;
+      }
       if (isUniqueOrOverbookError(err)) return null;
       throw err;
     });
+
+    if (updated === "DUPLICATE_CLINIC_DAY") {
+      return reply
+        .code(409)
+        .send({ error: duplicateClinicDayMessage(newSlot.department.name) });
+    }
 
     if (!updated) {
       return reply.code(409).send({ error: "New time slot is full" });

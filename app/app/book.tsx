@@ -7,6 +7,7 @@ import { AppText } from "@/components/ui/AppText";
 import { Surface } from "@/components/ui/Surface";
 import { PressableScale } from "@/components/PressableScale";
 import { AppShell } from "@/components/ui/AppShell";
+import { clinicImageFor } from "@/components/ui/ClinicCover";
 import { useAuth } from "@/features/auth/AuthProvider";
 import { useAppNav } from "@/hooks/useAppNav";
 import { useBreakpoint } from "@/hooks/useBreakpoint";
@@ -31,6 +32,45 @@ type Clinic = {
     avatarUrl: string;
   }>;
 };
+
+function initials(name: string): string {
+  const parts = name.trim().split(/\s+/).filter(Boolean);
+  if (parts.length === 0) return "?";
+  if (parts.length === 1) return parts[0]!.slice(0, 2).toUpperCase();
+  return `${parts[0]![0]}${parts[parts.length - 1]![0]}`.toUpperCase();
+}
+
+function ClinicThumb({ clinic }: { clinic: Clinic }) {
+  const { colors } = useTheme();
+  const [failed, setFailed] = useState(false);
+  const uri = clinicImageFor(clinic.name, clinic.imageUrl);
+
+  return (
+    <View
+      style={[
+        styles.thumb,
+        styles.thumbFallback,
+        {
+          backgroundColor: colors.surfaceRaised,
+          borderColor: colors.hairline,
+        },
+      ]}
+    >
+      {!failed ? (
+        <Image
+          source={{ uri }}
+          style={StyleSheet.absoluteFill}
+          contentFit="cover"
+          onError={() => setFailed(true)}
+        />
+      ) : (
+        <AppText variant="label" tone="secondary">
+          {initials(clinic.name)}
+        </AppText>
+      )}
+    </View>
+  );
+}
 
 function BookClinicPicker() {
   const { colors } = useTheme();
@@ -92,20 +132,7 @@ function BookClinicPicker() {
               style={styles.rowPress}
             >
               <Surface outlined style={styles.row}>
-                {clinic.imageUrl ? (
-                  <Image
-                    source={{ uri: clinic.imageUrl }}
-                    style={styles.thumb}
-                    contentFit="cover"
-                  />
-                ) : (
-                  <View
-                    style={[
-                      styles.thumb,
-                      { backgroundColor: colors.surfaceRaised },
-                    ]}
-                  />
-                )}
+                <ClinicThumb clinic={clinic} />
                 <View style={styles.rowCopy}>
                   {clinic.category ? (
                     <AppText variant="label" tone="tertiary" numberOfLines={1}>
@@ -180,6 +207,12 @@ const styles = StyleSheet.create({
     height: 72,
     borderRadius: 12,
     flexShrink: 0,
+  },
+  thumbFallback: {
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: StyleSheet.hairlineWidth,
+    overflow: "hidden",
   },
   rowCopy: {
     flex: 1,

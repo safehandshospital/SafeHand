@@ -67,21 +67,13 @@ async function main() {
         if (existingKeys.has(startsAt.toISOString())) continue;
 
         const endsAt = atHour(day, hour, 30);
-        const capacity = hour >= 9 && hour <= 11 ? 3 : 2;
-
-        let bookedBias = 0;
-        if (hour >= 9 && hour <= 11) bookedBias += 1;
-        if (weekday === 1) bookedBias += 1;
-        if (hour === 15 || hour === 16) bookedBias -= 1;
-        const bookedCount = Math.max(0, Math.min(capacity, bookedBias));
-
         toCreate.push({
           departmentId: department.id,
           doctorId: doctor?.id ?? null,
           startsAt,
           endsAt,
-          capacity,
-          bookedCount,
+          capacity: 1,
+          bookedCount: 0,
         });
       }
     }

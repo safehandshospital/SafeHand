@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { createElement, useCallback, useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
   Platform,
@@ -47,6 +47,65 @@ type Slot = {
     avatarUrl?: string | null;
   } | null;
 };
+
+type WebPickerInputProps = {
+  kind: "date" | "time";
+  value: string;
+  onChangeText: (value: string) => void;
+  placeholder: string;
+  min?: string;
+  max?: string;
+  step?: number;
+  colors: {
+    ink: string;
+    inkFaint: string;
+    hairline: string;
+    surfaceRaised: string;
+  };
+};
+
+function WebPickerInput({
+  kind,
+  value,
+  onChangeText,
+  placeholder,
+  min,
+  max,
+  step,
+  colors,
+}: WebPickerInputProps) {
+  const openPicker = (event: { currentTarget: HTMLInputElement }) => {
+    event.currentTarget.showPicker?.();
+  };
+
+  return createElement("input", {
+    type: kind,
+    value,
+    min,
+    max,
+    step,
+    placeholder,
+    onChange: (event: { currentTarget: HTMLInputElement }) =>
+      onChangeText(event.currentTarget.value),
+    onClick: openPicker,
+    onFocus: openPicker,
+    style: {
+      width: "100%",
+      boxSizing: "border-box",
+      borderWidth: 1,
+      borderStyle: "solid",
+      borderColor: colors.hairline,
+      borderRadius: radius.md,
+      backgroundColor: colors.surfaceRaised,
+      color: colors.ink,
+      padding: `${space[3]}px`,
+      fontSize: 15,
+      lineHeight: "20px",
+      outline: "none",
+      colorScheme: "dark",
+    },
+  });
+}
 
 function BookingWorkspace() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -247,25 +306,6 @@ function BookingWorkspace() {
     setStep("details");
   };
 
-  const nativeDateProps =
-    Platform.OS === "web"
-      ? ({
-          type: "date",
-          min: customDateBounds.min,
-          max: customDateBounds.max,
-        } as Record<string, unknown>)
-      : {};
-
-  const nativeTimeProps =
-    Platform.OS === "web"
-      ? ({
-          type: "time",
-          min: "08:00",
-          max: "16:00",
-          step: 3600,
-        } as Record<string, unknown>)
-      : {};
-
   const handleCustomDateChange = (value: string) => {
     setCustomDate(value);
     setCustomStartsAt(null);
@@ -352,14 +392,25 @@ function BookingWorkspace() {
               <AppText variant="label" tone="tertiary">
                 Date
               </AppText>
-              <TextInput
-                value={customDate}
-                onChangeText={handleCustomDateChange}
-                placeholder="Select date"
-                placeholderTextColor={colors.inkFaint}
-                style={inputStyle}
-                {...nativeDateProps}
-              />
+              {Platform.OS === "web" ? (
+                <WebPickerInput
+                  kind="date"
+                  value={customDate}
+                  onChangeText={handleCustomDateChange}
+                  placeholder="Select date"
+                  min={customDateBounds.min}
+                  max={customDateBounds.max}
+                  colors={colors}
+                />
+              ) : (
+                <TextInput
+                  value={customDate}
+                  onChangeText={handleCustomDateChange}
+                  placeholder="YYYY-MM-DD"
+                  placeholderTextColor={colors.inkFaint}
+                  style={inputStyle}
+                />
+              )}
               <AppText variant="caption" tone="tertiary">
                 Monday to Saturday, within the next 14 days.
               </AppText>
@@ -368,14 +419,26 @@ function BookingWorkspace() {
               <AppText variant="label" tone="tertiary">
                 Time
               </AppText>
-              <TextInput
-                value={customTime}
-                onChangeText={handleCustomTimeChange}
-                placeholder="Select time"
-                placeholderTextColor={colors.inkFaint}
-                style={inputStyle}
-                {...nativeTimeProps}
-              />
+              {Platform.OS === "web" ? (
+                <WebPickerInput
+                  kind="time"
+                  value={customTime}
+                  onChangeText={handleCustomTimeChange}
+                  placeholder="Select time"
+                  min="08:00"
+                  max="16:00"
+                  step={3600}
+                  colors={colors}
+                />
+              ) : (
+                <TextInput
+                  value={customTime}
+                  onChangeText={handleCustomTimeChange}
+                  placeholder="HH:MM"
+                  placeholderTextColor={colors.inkFaint}
+                  style={inputStyle}
+                />
+              )}
               <AppText variant="caption" tone="tertiary">
                 Hourly starts from 8:00 AM to 4:00 PM, excluding 12:00 PM.
               </AppText>

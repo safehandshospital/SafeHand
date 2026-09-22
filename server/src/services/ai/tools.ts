@@ -35,6 +35,10 @@ export const assistantTools: ChatCompletionTool[] = [
             type: "string",
             description: "Exact department name, e.g. 'Cardiology'.",
           },
+          hospitalName: {
+            type: "string",
+            description: "Optional exact hospital name when multiple hospitals have the same department.",
+          },
           limit: {
             type: "integer",
             description: "Max slots to return (default 10, max 30).",
@@ -152,20 +156,47 @@ export async function executeTool(
   switch (name) {
     case "list_departments": {
       const departments = await ctx.prisma.department.findMany({
-        select: { id: true, name: true, category: true, hours: true, location: true },
-        orderBy: { name: "asc" },
+        select: {
+          id: true,
+          name: true,
+          category: true,
+          hours: true,
+          location: true,
+          hospital: { select: { name: true, city: true } },
+        },
+        orderBy: [{ hospital: { name: "asc" } }, { name: "asc" }],
       });
       return { result: { departments }, sideEffect: false };
     }
 
     case "list_available_slots": {
       const departmentName = String(args.departmentName ?? "");
+      const hospitalName =
+        typeof args.hospitalName === "string" && args.hospitalName.trim()
+          ? args.hospitalName.trim()
+          : undefined;
       const limit = Math.min(30, Math.max(1, Number(args.limit) || 10));
-      const department = await ctx.prisma.department.findUnique({
-        where: { name: departmentName },
+      const departments = await ctx.prisma.department.findMany({
+        where: {
+          name: departmentName,
+          ...(hospitalName ? { hospital: { name: hospitalName } } : {}),
+        },
+        include: { hospital: true },
+        orderBy: [{ hospital: { name: "asc" } }, { name: "asc" }],
+        take: 2,
       });
+      const department = departments[0];
       if (!department) {
         return { result: { error: `No department named "${departmentName}"` }, sideEffect: false };
+      }
+      if (departments.length > 1) {
+        return {
+          result: {
+            error: `More than one hospital has "${departmentName}". Ask which hospital first.`,
+            matches: departments.map((d) => ({ departmentId: d.id, hospital: d.hospital.name })),
+          },
+          sideEffect: false,
+        };
       }
       const slots = await ctx.prisma.timeSlot.findMany({
         where: { departmentId: department.id, startsAt: { gte: new Date() } },
@@ -174,7 +205,14 @@ export async function executeTool(
         take: limit * 3,
       });
       const open = slots.map(enrichSlot).filter((s) => s.remaining > 0).slice(0, limit);
-      return { result: { departmentId: department.id, slots: open }, sideEffect: false };
+      return {
+        result: {
+          departmentId: department.id,
+          hospital: department.hospital.name,
+          slots: open,
+        },
+        sideEffect: false,
+      };
     }
 
     case "list_my_appointments": {
@@ -210,7 +248,7 @@ export async function executeTool(
         include: { doctor: true, department: true },
       });
       if (!slot) return { result: { error: "Time slot not found" }, sideEffect: false };
-      if (slot.bookedCount >= slot.capacity) {
+      if (slot.bookedCount >= 1 || slot.capacity < 1) {
         return { result: { error: "That time slot is already full" }, sideEffect: false };
       }
       const existing = await ctx.prisma.appointment.findFirst({
@@ -231,11 +269,15 @@ export async function executeTool(
 
       const appointment = await ctx.prisma
         .$transaction(async (tx) => {
-          const updated = await tx.timeSlot.update({
-            where: { id: slot.id },
-            data: { bookedCount: { increment: 1 } },
+          const claimed = await tx.timeSlot.updateMany({
+            where: {
+              id: slot.id,
+              bookedCount: { lt: 1 },
+              capacity: { gt: 0 },
+            },
+            data: { bookedCount: 1, capacity: 1 },
           });
-          if (updated.bookedCount > updated.capacity) throw new Error("OVERBOOK");
+          if (claimed.count !== 1) throw new Error("OVERBOOK");
           return tx.appointment.create({
             data: {
               userId: ctx.userId,
@@ -253,12 +295,15 @@ export async function executeTool(
           });
         }, { timeout: 10000 })
         .catch((err) => {
-          if (err instanceof Error && err.message === "OVERBOOK") return null;
+          if (
+            (err instanceof Error && err.message === "OVERBOOK") ||
+            (typeof err === "object" && err !== null && "code" in err && (err as { code?: string }).code === "P2002")
+          ) return null;
           throw err;
         });
 
       if (!appointment) {
-        return { result: { error: "That time slot filled up just now" }, sideEffect: false };
+        return { result: { error: "Only one patient can book that time. Please choose another slot." }, sideEffect: false };
       }
 
       await ctx.prisma.auditLog.create({
@@ -290,7 +335,7 @@ export async function executeTool(
       await ctx.prisma.$transaction(async (tx) => {
         await tx.timeSlot.update({
           where: { id: appointment.timeSlotId },
-          data: { bookedCount: { decrement: 1 } },
+          data: { bookedCount: 0, capacity: 1 },
         });
         await tx.appointment.update({ where: { id: appointmentId }, data: { status: "CANCELLED" } });
       }, { timeout: 10000 });
@@ -315,21 +360,25 @@ export async function executeTool(
       }
       const newSlot = await ctx.prisma.timeSlot.findUnique({ where: { id: newTimeSlotId } });
       if (!newSlot) return { result: { error: "New time slot not found" }, sideEffect: false };
-      if (newSlot.bookedCount >= newSlot.capacity) {
+      if (newSlot.bookedCount >= 1 || newSlot.capacity < 1) {
         return { result: { error: "New time slot is already full" }, sideEffect: false };
       }
 
       const updated = await ctx.prisma
         .$transaction(async (tx) => {
+          const claimed = await tx.timeSlot.updateMany({
+            where: {
+              id: newSlot.id,
+              bookedCount: { lt: 1 },
+              capacity: { gt: 0 },
+            },
+            data: { bookedCount: 1, capacity: 1 },
+          });
+          if (claimed.count !== 1) throw new Error("OVERBOOK");
           await tx.timeSlot.update({
             where: { id: appointment.timeSlotId },
-            data: { bookedCount: { decrement: 1 } },
+            data: { bookedCount: 0, capacity: 1 },
           });
-          const bumped = await tx.timeSlot.update({
-            where: { id: newSlot.id },
-            data: { bookedCount: { increment: 1 } },
-          });
-          if (bumped.bookedCount > bumped.capacity) throw new Error("OVERBOOK");
           return tx.appointment.update({
             where: { id: appointmentId },
             data: {
@@ -342,7 +391,10 @@ export async function executeTool(
           });
         }, { timeout: 10000 })
         .catch((err) => {
-          if (err instanceof Error && err.message === "OVERBOOK") return null;
+          if (
+            (err instanceof Error && err.message === "OVERBOOK") ||
+            (typeof err === "object" && err !== null && "code" in err && (err as { code?: string }).code === "P2002")
+          ) return null;
           throw err;
         });
 

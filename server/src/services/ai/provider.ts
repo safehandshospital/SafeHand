@@ -3,6 +3,7 @@ import { agentrouterProvider } from "./agentrouter.js";
 import { openaiProvider } from "./openai.js";
 import type {
   AgentResult,
+  BusyHoursResult,
   ChatProvider,
   ChatResult,
   OutlookResult,
@@ -101,4 +102,19 @@ export async function demandOutlook(input: {
   }>;
 }): Promise<OutlookResult> {
   return withFallback((p) => p.demandOutlook(input)) as Promise<OutlookResult>;
+}
+
+export async function predictBusyHours(input: {
+  departmentName: string;
+  hospitalName?: string;
+  periods: Array<{
+    weekday: number;
+    hour: number;
+    fillRatio: number;
+    level: string;
+    score: number;
+    slotCount: number;
+  }>;
+}): Promise<BusyHoursResult> {
+  return withFallback((p) => p.predictBusyHours(input)) as Promise<BusyHoursResult>;
 }

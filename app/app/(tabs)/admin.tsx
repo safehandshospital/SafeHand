@@ -15,9 +15,21 @@ export default function AdminScreen() {
   const { user } = useAuth();
   const { colors } = useTheme();
   const { isWide } = useBreakpoint();
-  const [departments, setDepartments] = useState<Array<{ id: string; name: string }>>([]);
+  const [departments, setDepartments] = useState<
+    Array<{ id: string; name: string; hospital?: { name: string; city?: string } }>
+  >([]);
   const [departmentId, setDepartmentId] = useState<string | null>(null);
   const [outlook, setOutlook] = useState<string | null>(null);
+  const [busySummary, setBusySummary] = useState<string | null>(null);
+  const [busyHours, setBusyHours] = useState<
+    Array<{
+      weekday: number;
+      hour: number;
+      level: "HIGH" | "MEDIUM" | "LOW";
+      confidence: number;
+      reason: string;
+    }>
+  >([]);
   const [source, setSource] = useState<string | null>(null);
   const [metrics, setMetrics] = useState<Record<string, unknown> | null>(null);
   const [loading, setLoading] = useState(false);
@@ -50,6 +62,8 @@ export default function AdminScreen() {
         api.evaluationMetrics(),
       ]);
       setOutlook(out.outlook);
+      setBusySummary(out.busyHoursSummary);
+      setBusyHours(out.busyHours);
       setSource(out.source);
       setMetrics(evalRes.metrics);
     } catch (e) {
@@ -80,7 +94,7 @@ export default function AdminScreen() {
             {departments.map((d) => (
               <Button
                 key={d.id}
-                label={d.name}
+                label={d.hospital?.name ? `${d.hospital.name} · ${d.name}` : d.name}
                 variant={departmentId === d.id ? "accent" : "secondary"}
                 onPress={() => setDepartmentId(d.id)}
               />
@@ -117,6 +131,38 @@ export default function AdminScreen() {
               </AppText>
             </Surface>
           )}
+          {busyHours.length > 0 ? (
+            <Surface outlined>
+              <AppText variant="h2">Predicted busy hours</AppText>
+              {busySummary ? (
+                <AppText variant="caption" tone="secondary">
+                  {busySummary}
+                </AppText>
+              ) : null}
+              <View style={styles.busyList}>
+                {busyHours.map((item) => (
+                  <View key={`${item.weekday}-${item.hour}`} style={styles.busyRow}>
+                    <View style={styles.busyTime}>
+                      <AppText variant="body" mono>
+                        {formatBusyWindow(item.weekday, item.hour)}
+                      </AppText>
+                      <AppText variant="caption" tone="tertiary">
+                        {Math.round(item.confidence * 100)}% confidence
+                      </AppText>
+                    </View>
+                    <View style={{ flex: 1, gap: space[1], minWidth: 0 }}>
+                      <AppText variant="label" tone={item.level === "HIGH" ? "danger" : "secondary"}>
+                        {item.level}
+                      </AppText>
+                      <AppText variant="caption" tone="secondary">
+                        {item.reason}
+                      </AppText>
+                    </View>
+                  </View>
+                ))}
+              </View>
+            </Surface>
+          ) : null}
           {metrics ? (
             <Surface outlined>
               <AppText variant="h2">Evaluation metrics</AppText>
@@ -148,7 +194,25 @@ const styles = StyleSheet.create({
   deptList: { gap: space[2] },
   deptListWide: { gap: space[2] },
   results: { gap: space[4], flex: 1 },
+  busyList: { gap: space[3], marginTop: space[3] },
+  busyRow: {
+    flexDirection: "row",
+    gap: space[3],
+    alignItems: "flex-start",
+  },
+  busyTime: {
+    width: 112,
+    gap: space[1],
+  },
   metricsGrid: { gap: space[3], marginTop: space[3] },
   metricsGridWide: { flexDirection: "row", flexWrap: "wrap" },
   metricCell: { minWidth: 180, flexBasis: 200, flexGrow: 1, gap: space[1] },
 });
+
+const weekdays = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+
+function formatBusyWindow(weekday: number, hour: number) {
+  const suffix = hour >= 12 ? "PM" : "AM";
+  const h = hour % 12 || 12;
+  return `${weekdays[weekday] ?? "Day"} ${h}:00 ${suffix}`;
+}

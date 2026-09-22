@@ -62,6 +62,8 @@ function BookingWorkspace() {
   const [booking, setBooking] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [deptName, setDeptName] = useState("Clinic");
+  const [hospitalName, setHospitalName] = useState<string | null>(null);
+  const [hospitalCity, setHospitalCity] = useState<string | null>(null);
   const [deptImage, setDeptImage] = useState<string | null>(null);
   const [deptDescription, setDeptDescription] = useState<string | null>(null);
   const [topic, setTopic] = useState("");
@@ -81,6 +83,8 @@ function BookingWorkspace() {
       const dept = deptRes.departments.find((d) => d.id === id);
       if (dept) {
         setDeptName(dept.name);
+        setHospitalName(dept.hospital?.name ?? null);
+        setHospitalCity(dept.hospital?.city ?? null);
         setDeptImage(dept.imageUrl ?? null);
         setDeptDescription(dept.description);
         setTopic((t) => t || `${dept.name} visit`);
@@ -192,7 +196,9 @@ function BookingWorkspace() {
             />
             <View style={styles.heroCopy}>
               <AppText variant="label" tone="tertiary">
-                Book appointment
+                {hospitalName
+                  ? `${hospitalName}${hospitalCity ? ` · ${hospitalCity}` : ""}`
+                  : "Book appointment"}
               </AppText>
               <AppText variant="h1" numberOfLines={2}>
                 {deptName}
@@ -416,6 +422,13 @@ function BookingWorkspace() {
             <AppText variant="h2">Confirm booking</AppText>
           </View>
           <Surface outlined style={styles.summaryCard}>
+            <AppText variant="label" tone="tertiary">
+              Hospital
+            </AppText>
+            <AppText variant="body">
+              {hospitalName ?? "SafeHand network"}
+              {hospitalCity ? ` · ${hospitalCity}` : ""}
+            </AppText>
             <AppText variant="label" tone="tertiary">
               Clinic
             </AppText>

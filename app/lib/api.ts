@@ -94,6 +94,15 @@ export const api = {
         id: string;
         name: string;
         description: string;
+        hospital?: {
+          id: string;
+          name: string;
+          description?: string;
+          address?: string;
+          city?: string;
+          phone?: string | null;
+          imageUrl?: string | null;
+        };
         summary?: string;
         category?: string;
         treatment?: string;
@@ -163,6 +172,11 @@ export const api = {
           name: string;
           description?: string;
           imageUrl?: string | null;
+          hospital?: {
+            id: string;
+            name: string;
+            city?: string;
+          };
         };
         timeSlot: { startsAt: string; endsAt: string };
         doctor?: {
@@ -237,8 +251,17 @@ export const api = {
         level: string;
         score: number;
         fillRatio: number;
+        slotCount: number;
       }>;
       department: { id: string; name: string };
+      busyHoursSummary: string;
+      busyHours: Array<{
+        weekday: number;
+        hour: number;
+        level: "HIGH" | "MEDIUM" | "LOW";
+        confidence: number;
+        reason: string;
+      }>;
     }>("/api/ai/demand-outlook", {
       method: "POST",
       body: JSON.stringify({ departmentId }),

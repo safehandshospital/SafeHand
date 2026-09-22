@@ -5,8 +5,42 @@ import { demandLevelForSlot } from "../src/services/demand.js";
 
 const prisma = new PrismaClient();
 
+const HOSPITALS = [
+  {
+    name: "SafeHand Medical Centre",
+    description:
+      "Main outpatient campus with family care, specialty clinics, and diagnostics.",
+    address: "Outpatient Road, Accra",
+    city: "Accra",
+    phone: "+233 30 200 1100",
+    imageUrl:
+      "https://images.unsplash.com/photo-1586773860418-d37222d8fce3?auto=format&fit=crop&w=1200&q=80",
+  },
+  {
+    name: "Korle Sunrise Hospital",
+    description:
+      "Busy urban hospital focused on children, heart care, and general outpatient visits.",
+    address: "Independence Avenue, Accra",
+    city: "Accra",
+    phone: "+233 30 200 2200",
+    imageUrl:
+      "https://images.unsplash.com/photo-1538108149393-fbbd81895907?auto=format&fit=crop&w=1200&q=80",
+  },
+  {
+    name: "Garden City Community Hospital",
+    description:
+      "Kumasi campus for outpatient care, rehab, dermatology, and follow-up clinics.",
+    address: "Lake Road, Kumasi",
+    city: "Kumasi",
+    phone: "+233 32 200 3300",
+    imageUrl:
+      "https://images.unsplash.com/photo-1516549655169-df83a0774514?auto=format&fit=crop&w=1200&q=80",
+  },
+];
+
 const DEPARTMENTS = [
   {
+    hospitalName: "SafeHand Medical Centre",
     name: "General Practice",
     description: "Primary care visits and follow ups.",
     summary:
@@ -30,6 +64,7 @@ const DEPARTMENTS = [
       "https://images.unsplash.com/photo-1519494026892-80bbd2d6fd0d?auto=format&fit=crop&w=1200&q=80",
   },
   {
+    hospitalName: "SafeHand Medical Centre",
     name: "Pediatrics",
     description: "Care for children and teens.",
     summary:
@@ -53,6 +88,7 @@ const DEPARTMENTS = [
       "https://images.unsplash.com/photo-1631217868264-e5b90bb7e133?auto=format&fit=crop&w=1200&q=80",
   },
   {
+    hospitalName: "Korle Sunrise Hospital",
     name: "Cardiology",
     description: "Heart and vascular specialty care.",
     summary:
@@ -76,6 +112,7 @@ const DEPARTMENTS = [
       "https://images.unsplash.com/photo-1581595220892-b0739db3b8c5?auto=format&fit=crop&w=1200&q=80",
   },
   {
+    hospitalName: "Garden City Community Hospital",
     name: "Dermatology",
     description: "Skin care and minor procedures.",
     summary:
@@ -99,6 +136,7 @@ const DEPARTMENTS = [
       "https://images.unsplash.com/photo-1629909613654-28e377c37b09?auto=format&fit=crop&w=1200&q=80",
   },
   {
+    hospitalName: "Garden City Community Hospital",
     name: "Orthopedics",
     description: "Joints, soft tissue, and rehab planning.",
     summary:
@@ -146,6 +184,7 @@ async function main() {
   await prisma.timeSlot.deleteMany();
   await prisma.doctor.deleteMany();
   await prisma.department.deleteMany();
+  await prisma.hospital.deleteMany();
   await prisma.user.deleteMany();
 
   const passwordHash = await bcrypt.hash("password123", 10);
@@ -420,8 +459,22 @@ const DOCTORS: Record<
 
   let visitCursor = 0;
 
+  const hospitals = new Map<string, { id: string }>();
+  for (const hospital of HOSPITALS) {
+    const created = await prisma.hospital.create({ data: hospital });
+    hospitals.set(created.name, created);
+  }
+
   for (const dept of DEPARTMENTS) {
-    const department = await prisma.department.create({ data: dept });
+    const { hospitalName, ...departmentData } = dept;
+    const hospital = hospitals.get(hospitalName);
+    if (!hospital) throw new Error(`Missing hospital "${hospitalName}"`);
+    const department = await prisma.department.create({
+      data: {
+        ...departmentData,
+        hospitalId: hospital.id,
+      },
+    });
     const doc = DOCTORS[dept.name] ?? {
       fullName: `Dr. ${dept.name}`,
       specialty: dept.name,
@@ -455,7 +508,7 @@ const DOCTORS: Record<
       for (const hour of [8, 9, 10, 11, 13, 14, 15, 16]) {
         const startsAt = atHour(day, hour);
         const endsAt = atHour(day, hour, 30);
-        const capacity = hour >= 9 && hour <= 11 ? 3 : 2;
+        const capacity = 1;
 
         let bookedBias = 0;
         if (hour >= 9 && hour <= 11) bookedBias += 1;

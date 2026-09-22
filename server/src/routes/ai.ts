@@ -1,6 +1,6 @@
 import type { FastifyPluginAsync } from "fastify";
 import { z } from "zod";
-import { recommendSlots, chatAssistantAgent, demandOutlook } from "../services/ai/provider.js";
+import { recommendSlots, chatAssistantAgent, demandOutlook, predictBusyHours } from "../services/ai/provider.js";
 import { demandLevelForSlot, rankSlotsByDemand } from "../services/demand.js";
 import { assistantTools, executeTool } from "../services/ai/tools.js";
 
@@ -166,7 +166,12 @@ export const aiRoutes: FastifyPluginAsync = async (app) => {
       }
     } else {
       const departments = await app.prisma.department.findMany({
-        select: { name: true, category: true, hours: true },
+      select: {
+        name: true,
+        category: true,
+        hours: true,
+        hospital: { select: { name: true, city: true } },
+      },
         take: 30,
       });
       context.departments = departments;
@@ -224,6 +229,7 @@ export const aiRoutes: FastifyPluginAsync = async (app) => {
 
     const department = await app.prisma.department.findUnique({
       where: { id: parsed.data.departmentId },
+      include: { hospital: true },
     });
     if (!department) {
       return reply.code(404).send({ error: "Department not found" });
@@ -261,37 +267,62 @@ export const aiRoutes: FastifyPluginAsync = async (app) => {
         fillRatio: Number(fill.toFixed(3)),
         level: demand.level,
         score: demand.score,
+        slotCount: v.count,
       };
     });
 
     const started = Date.now();
-    const ai = await demandOutlook({
-      departmentName: department.name,
-      periods,
-    });
+    const [ai, busy] = await Promise.all([
+      demandOutlook({
+        departmentName: department.name,
+        periods,
+      }),
+      predictBusyHours({
+        departmentName: department.name,
+        hospitalName: department.hospital.name,
+        periods,
+      }),
+    ]);
 
     await app.prisma.aiPromptLog.create({
       data: {
         route: "demand-outlook",
         model: ai.model,
         provider: ai.provider,
-        success: ai.ok,
+        success: ai.ok && busy.ok,
         latencyMs: Date.now() - started,
-        error: ai.error ?? null,
+        error: ai.error ?? busy.error ?? null,
       },
     });
 
     const high = periods.filter((p) => p.level === "HIGH").length;
     const low = periods.filter((p) => p.level === "LOW").length;
+    const predictedBusyHours = busy.ok && busy.busyHours?.length
+      ? busy.busyHours
+      : [...periods]
+          .sort((a, b) => b.score - a.score)
+          .slice(0, 5)
+          .map((p) => ({
+            weekday: p.weekday,
+            hour: p.hour,
+            level: p.level as "HIGH" | "MEDIUM" | "LOW",
+            confidence: Number(Math.max(0.35, p.score).toFixed(2)),
+            reason: `${p.level.toLowerCase()} predicted demand from ${p.slotCount} slot(s) at ${Math.round(p.fillRatio * 100)}% fill.`,
+          }));
 
     return {
       department,
       periods,
-      source: ai.ok ? ai.provider : "heuristic",
+      source: ai.ok || busy.ok ? [ai.ok ? ai.provider : null, busy.ok ? busy.provider : null].filter(Boolean).join("+") : "heuristic",
       outlook:
         ai.ok && ai.outlook
           ? ai.outlook
           : `Next 7 days: ${high} high-demand hour buckets and ${low} low-demand buckets. Steer walk-ins toward low-demand windows to balance load.`,
+      busyHoursSummary:
+        busy.ok && busy.summary
+          ? busy.summary
+          : `Predicted busiest hours come from the highest current fill ratios and historical demand scores.`,
+      busyHours: predictedBusyHours,
     };
   });
 };

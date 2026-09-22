@@ -5,6 +5,7 @@ import type {
 } from "openai/resources/chat/completions";
 import {
   buildAgentMessages,
+  buildBusyHoursMessages,
   buildChatMessages,
   buildOutlookMessages,
   buildRecommendMessages,
@@ -39,6 +40,23 @@ export type OutlookResult = {
   provider: string;
   model: string;
   outlook?: string;
+  error?: string;
+};
+
+export type BusyHourPrediction = {
+  weekday: number;
+  hour: number;
+  level: "HIGH" | "MEDIUM" | "LOW";
+  confidence: number;
+  reason: string;
+};
+
+export type BusyHoursResult = {
+  ok: boolean;
+  provider: string;
+  model: string;
+  summary?: string;
+  busyHours?: BusyHourPrediction[];
   error?: string;
 };
 
@@ -100,6 +118,18 @@ export type ChatProvider = {
       score: number;
     }>;
   }): Promise<OutlookResult>;
+  predictBusyHours(input: {
+    departmentName: string;
+    hospitalName?: string;
+    periods: Array<{
+      weekday: number;
+      hour: number;
+      fillRatio: number;
+      level: string;
+      score: number;
+      slotCount: number;
+    }>;
+  }): Promise<BusyHoursResult>;
   chatAgent(input: {
     message: string;
     departmentName?: string;
@@ -200,6 +230,43 @@ export function createChatProvider(opts: {
         }
 
         return { ok: true, provider: name, model: adminModel || model, outlook };
+      } catch (err) {
+        return {
+          ok: false,
+          provider: name,
+          model: adminModel || model,
+          error: err instanceof Error ? err.message : `${name} request failed`,
+        };
+      }
+    },
+
+    async predictBusyHours(input) {
+      try {
+        const completion = await client.chat.completions.create({
+          model: adminModel || model,
+          response_format: { type: "json_object" },
+          messages: buildBusyHoursMessages(input),
+          temperature: 0.25,
+          max_tokens: 550,
+        });
+
+        const raw = completion.choices[0]?.message?.content;
+        if (isBlank(raw)) {
+          throw new Error(`${name} returned an empty completion`);
+        }
+
+        const parsed = JSON.parse(raw as string) as {
+          summary?: string;
+          busyHours?: BusyHourPrediction[];
+        };
+
+        return {
+          ok: true,
+          provider: name,
+          model: adminModel || model,
+          summary: parsed.summary ?? "Predicted busiest clinic windows from current demand.",
+          busyHours: (parsed.busyHours ?? []).slice(0, 6),
+        };
       } catch (err) {
         return {
           ok: false,

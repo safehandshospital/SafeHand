@@ -18,6 +18,10 @@ type Clinic = {
   id: string;
   name: string;
   description: string;
+  hospital?: {
+    name: string;
+    city?: string;
+  };
   category?: string;
   imageUrl?: string | null;
   openSlots?: number;
@@ -105,7 +109,9 @@ function BookClinicPicker() {
                 <View style={styles.rowCopy}>
                   {clinic.category ? (
                     <AppText variant="label" tone="tertiary" numberOfLines={1}>
-                      {clinic.category}
+                      {clinic.hospital?.name
+                        ? `${clinic.hospital.name} · ${clinic.category}`
+                        : clinic.category}
                     </AppText>
                   ) : null}
                   <AppText variant="h2" numberOfLines={1}>
@@ -115,6 +121,7 @@ function BookClinicPicker() {
                     {clinic.description}
                   </AppText>
                   <AppText variant="caption" tone="tertiary" numberOfLines={1}>
+                    {clinic.hospital?.city ? `${clinic.hospital.city} · ` : ""}
                     {clinic.openSlots ?? 0} open
                     {lead ? `, ${lead.fullName}` : ""}
                   </AppText>

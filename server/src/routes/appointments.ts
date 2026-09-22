@@ -23,7 +23,7 @@ export const appointmentRoutes: FastifyPluginAsync = async (app) => {
     const appointments = await app.prisma.appointment.findMany({
       where: role === "STAFF" ? undefined : { userId: sub },
       include: {
-        department: true,
+        department: { include: { hospital: true } },
         doctor: true,
         timeSlot: true,
         healthFiles: { orderBy: { createdAt: "asc" } },
@@ -59,7 +59,7 @@ export const appointmentRoutes: FastifyPluginAsync = async (app) => {
     if (!slot) {
       return reply.code(404).send({ error: "Time slot not found" });
     }
-    if (slot.bookedCount >= slot.capacity) {
+    if (slot.bookedCount >= 1 || slot.capacity < 1) {
       return reply.code(409).send({ error: "Time slot is full" });
     }
 
@@ -87,11 +87,18 @@ export const appointmentRoutes: FastifyPluginAsync = async (app) => {
     });
 
     const appointment = await app.prisma.$transaction(async (tx) => {
-      const updated = await tx.timeSlot.update({
-        where: { id: slot.id },
-        data: { bookedCount: { increment: 1 } },
+      const claimed = await tx.timeSlot.updateMany({
+        where: {
+          id: slot.id,
+          bookedCount: { lt: 1 },
+          capacity: { gt: 0 },
+        },
+        data: {
+          bookedCount: 1,
+          capacity: 1,
+        },
       });
-      if (updated.bookedCount > updated.capacity) {
+      if (claimed.count !== 1) {
         throw new Error("OVERBOOK");
       }
 
@@ -110,21 +117,24 @@ export const appointmentRoutes: FastifyPluginAsync = async (app) => {
           status: "BOOKED",
         },
         include: {
-          department: true,
+          department: { include: { hospital: true } },
           doctor: true,
           timeSlot: true,
           healthFiles: true,
         },
       });
     }).catch(async (err) => {
-      if (err instanceof Error && err.message === "OVERBOOK") {
+      if (
+        (err instanceof Error && err.message === "OVERBOOK") ||
+        (typeof err === "object" && err !== null && "code" in err && (err as { code?: string }).code === "P2002")
+      ) {
         return null;
       }
       throw err;
     });
 
     if (!appointment) {
-      return reply.code(409).send({ error: "Time slot is full" });
+      return reply.code(409).send({ error: "Only one patient can book that time. Please choose another slot." });
     }
 
     await app.prisma.auditLog.create({
@@ -159,7 +169,7 @@ export const appointmentRoutes: FastifyPluginAsync = async (app) => {
     const cancelled = await app.prisma.$transaction(async (tx) => {
       await tx.timeSlot.update({
         where: { id: appointment.timeSlotId },
-        data: { bookedCount: { decrement: 1 } },
+        data: { bookedCount: 0, capacity: 1 },
       });
       return tx.appointment.update({
         where: { id },
@@ -207,22 +217,29 @@ export const appointmentRoutes: FastifyPluginAsync = async (app) => {
     if (!newSlot) {
       return reply.code(404).send({ error: "New time slot not found" });
     }
-    if (newSlot.bookedCount >= newSlot.capacity) {
+    if (newSlot.bookedCount >= 1 || newSlot.capacity < 1) {
       return reply.code(409).send({ error: "New time slot is full" });
     }
 
     const updated = await app.prisma.$transaction(async (tx) => {
-      await tx.timeSlot.update({
-        where: { id: appointment.timeSlotId },
-        data: { bookedCount: { decrement: 1 } },
+      const claimed = await tx.timeSlot.updateMany({
+        where: {
+          id: newSlot.id,
+          bookedCount: { lt: 1 },
+          capacity: { gt: 0 },
+        },
+        data: {
+          bookedCount: 1,
+          capacity: 1,
+        },
       });
-      const bumped = await tx.timeSlot.update({
-        where: { id: newSlot.id },
-        data: { bookedCount: { increment: 1 } },
-      });
-      if (bumped.bookedCount > bumped.capacity) {
+      if (claimed.count !== 1) {
         throw new Error("OVERBOOK");
       }
+      await tx.timeSlot.update({
+        where: { id: appointment.timeSlotId },
+        data: { bookedCount: 0, capacity: 1 },
+      });
       return tx.appointment.update({
         where: { id },
         data: {
@@ -234,7 +251,10 @@ export const appointmentRoutes: FastifyPluginAsync = async (app) => {
         include: { department: true, timeSlot: true, doctor: true },
       });
     }).catch((err) => {
-      if (err instanceof Error && err.message === "OVERBOOK") return null;
+      if (
+        (err instanceof Error && err.message === "OVERBOOK") ||
+        (typeof err === "object" && err !== null && "code" in err && (err as { code?: string }).code === "P2002")
+      ) return null;
       throw err;
     });
 

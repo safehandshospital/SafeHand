@@ -104,8 +104,13 @@ export default function DepartmentsScreen() {
           const active = selected?.id === dept.id;
           const lead = dept.doctors?.[0];
           const extras = (dept.doctors?.length ?? 0) - 1;
-          const place = [dept.location, dept.wing].filter(Boolean).join(", ");
-          const mapsQuery = [dept.name, dept.location, dept.wing]
+          const hospitalPlace = [dept.hospital?.name, dept.hospital?.city]
+            .filter(Boolean)
+            .join(", ");
+          const place = [hospitalPlace, dept.location, dept.wing]
+            .filter(Boolean)
+            .join(" · ");
+          const mapsQuery = [dept.hospital?.name, dept.name, dept.location, dept.wing]
             .filter(Boolean)
             .join(", ");
           return (
@@ -133,7 +138,9 @@ export default function DepartmentsScreen() {
                   <View style={styles.cardTop}>
                     {dept.category ? (
                       <AppText variant="label" tone="tertiary" numberOfLines={1}>
-                        {dept.category}
+                        {dept.hospital?.name
+                          ? `${dept.hospital.name} · ${dept.category ?? "Clinic"}`
+                          : dept.category}
                       </AppText>
                     ) : null}
                     <AppText variant="h2" numberOfLines={1}>

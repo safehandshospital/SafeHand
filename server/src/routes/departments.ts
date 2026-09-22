@@ -28,6 +28,7 @@ export const departmentRoutes: FastifyPluginAsync = async (app) => {
     const departments = await app.prisma.department.findMany({
       orderBy: { name: "asc" },
       include: {
+        hospital: true,
         doctors: {
           select: {
             id: true,
@@ -87,6 +88,7 @@ export const departmentRoutes: FastifyPluginAsync = async (app) => {
         const upcomingSlots = timeSlots.length;
         return {
           ...rest,
+          hospital: dept.hospital,
           services: asStringArray(services),
           openSlots,
           upcomingSlots,
@@ -108,6 +110,7 @@ export const departmentRoutes: FastifyPluginAsync = async (app) => {
     const department = await app.prisma.department.findUnique({
       where: { id },
       include: {
+        hospital: true,
         doctors: {
           select: {
             id: true,

@@ -22,6 +22,15 @@ export type ClinicDetail = {
   id: string;
   name: string;
   description: string;
+  hospital?: {
+    id: string;
+    name: string;
+    description?: string;
+    address?: string;
+    city?: string;
+    phone?: string | null;
+    imageUrl?: string | null;
+  };
   summary?: string;
   category?: string;
   treatment?: string;
@@ -69,8 +78,13 @@ export function ClinicDetailRail({ clinic, onBook }: Props) {
   const lead = clinic.doctors?.[0] ?? null;
   const services = clinic.services ?? [];
   const recent = clinic.recentAppointments ?? [];
-  const placeLabel = [clinic.location, clinic.wing].filter(Boolean).join(", ");
-  const mapsQuery = [clinic.name, clinic.location, clinic.wing]
+  const hospitalPlace = [clinic.hospital?.name, clinic.hospital?.city]
+    .filter(Boolean)
+    .join(", ");
+  const placeLabel = [hospitalPlace, clinic.location, clinic.wing]
+    .filter(Boolean)
+    .join(" · ");
+  const mapsQuery = [clinic.hospital?.name, clinic.name, clinic.location, clinic.wing]
     .filter(Boolean)
     .join(", ");
 
@@ -87,7 +101,8 @@ export function ClinicDetailRail({ clinic, onBook }: Props) {
         <AppText variant="h2">{clinic.name}</AppText>
         {clinic.category ? (
           <AppText variant="caption" tone="secondary" numberOfLines={1}>
-            {clinic.category}
+          {clinic.hospital?.name ? `${clinic.hospital.name} · ` : ""}
+          {clinic.category}
           </AppText>
         ) : null}
         <AppText variant="body" tone="secondary">

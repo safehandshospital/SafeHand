@@ -36,6 +36,19 @@ enum DemandLevel {
   HIGH
 }
 
+model Hospital {
+  id          String       @id @default(cuid())
+  name        String       @unique
+  description String       @default("")
+  address     String       @default("")
+  city        String       @default("")
+  phone       String?
+  imageUrl    String?
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+  departments Department[]
+}
+
 model User {
   id           String        @id @default(cuid())
   email        String        @unique
@@ -53,7 +66,9 @@ model User {
 
 model Department {
   id           String            @id @default(cuid())
-  name         String            @unique
+  hospitalId   String
+  hospital     Hospital          @relation(fields: [hospitalId], references: [id], onDelete: Cascade)
+  name         String
   description  String
   /** Longer clinic overview for cards / rail */
   summary      String            @default("")
@@ -80,6 +95,9 @@ model Department {
   timeSlots    TimeSlot[]
   appointments Appointment[]
   demandSnaps  DemandSnapshot[]
+
+  @@unique([hospitalId, name])
+  @@index([hospitalId])
 }
 
 model Doctor {

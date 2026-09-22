@@ -21,7 +21,12 @@ export type ChatDbContext = {
     doctorName: string | null;
   }>;
   /** Full department directory, used when no single department is in focus */
-  departments?: Array<{ name: string; category: string; hours: string }>;
+  departments?: Array<{
+    name: string;
+    category: string;
+    hours: string;
+    hospital?: { name: string; city: string };
+  }>;
 };
 
 export function buildRecommendMessages(input: {
@@ -76,7 +81,9 @@ export function buildChatMessages(input: {
   if (input.context?.departments?.length) {
     grounding.push(
       `Available clinic departments: ${input.context.departments
-        .map((d) => `${d.name} (${d.category}, ${d.hours || "hours vary"})`)
+        .map((d) =>
+          `${d.name}${d.hospital ? ` at ${d.hospital.name}` : ""} (${d.category}, ${d.hours || "hours vary"})`,
+        )
         .join(", ")}.`,
     );
   }
@@ -141,6 +148,35 @@ export function buildOutlookMessages(input: {
       content: JSON.stringify({
         department: input.departmentName,
         periods: input.periods.slice(0, 50),
+      }),
+    },
+  ];
+}
+
+export function buildBusyHoursMessages(input: {
+  departmentName: string;
+  hospitalName?: string;
+  periods: Array<{
+    weekday: number;
+    hour: number;
+    fillRatio: number;
+    level: string;
+    score: number;
+    slotCount: number;
+  }>;
+}): ChatCompletionMessageParam[] {
+  return [
+    {
+      role: "system",
+      content:
+        "You predict busy outpatient booking hours for hospital staff. Return JSON only: { summary: string, busyHours: [{ weekday: number, hour: number, level: 'HIGH' | 'MEDIUM' | 'LOW', confidence: number, reason: string }] }. Include the 3-6 busiest windows, with confidence from 0 to 1.",
+    },
+    {
+      role: "user",
+      content: JSON.stringify({
+        hospital: input.hospitalName ?? null,
+        department: input.departmentName,
+        periods: input.periods.slice(0, 80),
       }),
     },
   ];

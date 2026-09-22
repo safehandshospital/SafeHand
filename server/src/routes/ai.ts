@@ -20,6 +20,20 @@ const outlookSchema = z.object({
   departmentId: z.string().min(1),
 });
 
+function formatDateTime(value: Date) {
+  return new Intl.DateTimeFormat("en-GH", {
+    weekday: "short",
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  }).format(value);
+}
+
+function normalize(text: string) {
+  return text.toLowerCase().replace(/\s+/g, " ").trim();
+}
+
 export const aiRoutes: FastifyPluginAsync = async (app) => {
   const auth = { preHandler: [(app as any).authenticate] };
 
@@ -114,6 +128,122 @@ export const aiRoutes: FastifyPluginAsync = async (app) => {
     const parsed = chatSchema.safeParse(request.body);
     if (!parsed.success) {
       return reply.code(400).send({ error: parsed.error.flatten() });
+    }
+
+    const text = normalize(parsed.data.message);
+    const wantsHospitals =
+      /\b(hospitals?|clinics?|departments?|available hospitals?|which hospitals?)\b/.test(text);
+    const wantsAppointments =
+      /\b(my appointments?|next appointment|upcoming|bookings?|visits?)\b/.test(text);
+    const wantsAvailability =
+      /\b(available|availability|slots?|times?|book|appointment|quiet|busy|free)\b/.test(text);
+    const asksRules =
+      /\b(same time|same date|duplicate|occupied|already booked|double book|book twice)\b/.test(text);
+
+    if (asksRules) {
+      return {
+        source: "rules",
+        reply:
+          "The app now blocks duplicate bookings. One exact time can only be booked by one patient, and the same patient cannot book the same clinic twice on the same date. If a time is occupied, choose another time or cancel the existing appointment first.",
+        toolCalls: [],
+      };
+    }
+
+    if (wantsAppointments && !wantsAvailability) {
+      const appointments = await app.prisma.appointment.findMany({
+        where: { userId: request.user.sub, status: "BOOKED" },
+        include: { department: { include: { hospital: true } }, doctor: true, timeSlot: true },
+        orderBy: { timeSlot: { startsAt: "asc" } },
+        take: 5,
+      });
+      if (appointments.length === 0) {
+        return {
+          source: "rules",
+          reply: "You do not have any upcoming booked appointments right now.",
+          toolCalls: [],
+        };
+      }
+      return {
+        source: "rules",
+        reply: `Your upcoming appointments:\n${appointments
+          .map(
+            (a, i) =>
+              `${i + 1}. ${a.department.name} at ${a.department.hospital.name}, ${formatDateTime(
+                a.timeSlot.startsAt,
+              )}${a.doctor ? ` with ${a.doctor.fullName}` : ""}.`,
+          )
+          .join("\n")}`,
+        toolCalls: [],
+      };
+    }
+
+    if (wantsHospitals && !parsed.data.departmentId) {
+      const departments = await app.prisma.department.findMany({
+        select: {
+          name: true,
+          category: true,
+          hours: true,
+          hospital: { select: { name: true, city: true } },
+          timeSlots: {
+            where: { startsAt: { gte: new Date() } },
+            select: { capacity: true, bookedCount: true },
+          },
+        },
+        orderBy: [{ hospital: { name: "asc" } }, { name: "asc" }],
+      });
+      return {
+        source: "rules",
+        reply: `These are the hospitals/clinics currently available:\n${departments
+          .map((d) => {
+            const open = d.timeSlots.reduce(
+              (sum, slot) => sum + Math.max(0, slot.capacity - slot.bookedCount),
+              0,
+            );
+            return `- ${d.hospital.name} (${d.hospital.city}): ${d.name}, ${open} open slot(s).`;
+          })
+          .join("\n")}`,
+        toolCalls: [],
+      };
+    }
+
+    if (wantsAvailability && parsed.data.departmentId) {
+      const department = await app.prisma.department.findUnique({
+        where: { id: parsed.data.departmentId },
+        include: { hospital: true },
+      });
+      if (department) {
+        const slots = await app.prisma.timeSlot.findMany({
+          where: { departmentId: department.id, startsAt: { gte: new Date() } },
+          include: { doctor: true },
+          orderBy: { startsAt: "asc" },
+          take: 40,
+        });
+        const open = slots
+          .map((slot) => {
+            const remaining = Math.max(0, slot.capacity - slot.bookedCount);
+            const fillRatio = slot.capacity === 0 ? 1 : slot.bookedCount / slot.capacity;
+            const demand = demandLevelForSlot(slot.startsAt, fillRatio);
+            return { slot, remaining, demand };
+          })
+          .filter((s) => s.remaining > 0)
+          .sort((a, b) => a.demand.score - b.demand.score)
+          .slice(0, 5);
+        return {
+          source: "rules",
+          reply:
+            open.length > 0
+              ? `Best available ${department.name} times at ${department.hospital.name}:\n${open
+                  .map(
+                    (s, i) =>
+                      `${i + 1}. ${formatDateTime(s.slot.startsAt)}${
+                        s.slot.doctor ? ` with ${s.slot.doctor.fullName}` : ""
+                      } (${s.demand.level.toLowerCase()} demand).`,
+                  )
+                  .join("\n")}`
+              : `I do not see any open ${department.name} slots right now. Try another clinic or check back later.`,
+          toolCalls: [],
+        };
+      }
     }
 
     let departmentName: string | undefined;

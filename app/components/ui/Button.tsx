@@ -42,12 +42,15 @@ export function Button({
   const isPrimary = variant === "primary";
   const isAccent = variant === "accent";
   const isGhost = variant === "ghost";
+  const isBooking = /^book appointment$/i.test(label.trim());
   const busy = disabled || loading;
   const labelTone = isPrimary ? "inverse" : "primary";
-  const labelColor = isAccent ? ON_ACCENT : undefined;
-  const spinnerColor = isPrimary || isAccent ? ON_ACCENT : colors.ink;
+  const labelColor = isAccent || isBooking ? ON_ACCENT : undefined;
+  const spinnerColor = isPrimary || isAccent || isBooking ? ON_ACCENT : colors.ink;
 
-  const background = isAccent
+  const background = isBooking
+    ? { backgroundColor: "#16A34A" }
+    : isAccent
     ? { backgroundColor: colors.accent }
     : isPrimary
       ? { backgroundColor: colors.ink }

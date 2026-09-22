@@ -34,6 +34,31 @@ function normalize(text: string) {
   return text.toLowerCase().replace(/\s+/g, " ").trim();
 }
 
+function requestedDayRange(text: string) {
+  const now = new Date();
+  const start = new Date(now);
+  if (/\btomorrow\b/.test(text)) {
+    start.setDate(start.getDate() + 1);
+  }
+  start.setHours(/\btoday\b/.test(text) ? now.getHours() : 0, /\btoday\b/.test(text) ? now.getMinutes() : 0, 0, 0);
+
+  const end = new Date(start);
+  end.setHours(23, 59, 59, 999);
+
+  if (/\btoday\b|\btomorrow\b/.test(text)) return { start, end };
+  return { start: now, end: new Date(now.getTime() + 14 * 24 * 60 * 60 * 1000) };
+}
+
+function departmentAlias(text: string) {
+  if (/\bheart|cardio|cardiology|chest pain|blood pressure\b/.test(text)) return "Cardiology";
+  if (/\bskin|rash|acne|eczema|dermatology\b/.test(text)) return "Dermatology";
+  if (/\bemergency|urgent|ridge\b/.test(text)) return "Emergency Medicine";
+  if (/\bkidney|urology|urinary|nephrology|korle\b/.test(text)) return "Nephrology & Urology";
+  if (/\bbone|joint|knee|orthopedic|orthopaedic|orthopedics\b/.test(text)) return "Orthopedics";
+  if (/\bchild|children|kid|pediatric|paediatric|pediatrics\b/.test(text)) return "Pediatrics";
+  return null;
+}
+
 export const aiRoutes: FastifyPluginAsync = async (app) => {
   const auth = { preHandler: [(app as any).authenticate] };
 
@@ -139,6 +164,17 @@ export const aiRoutes: FastifyPluginAsync = async (app) => {
       /\b(available|availability|slots?|times?|book|appointment|quiet|busy|free)\b/.test(text);
     const asksRules =
       /\b(same time|same date|duplicate|occupied|already booked|double book|book twice)\b/.test(text);
+    const asksCapabilities =
+      /\b(what can you do|how can you help|help me|help|assistant)\b/.test(text);
+
+    if (asksCapabilities && text.length < 80) {
+      return {
+        source: "rules",
+        reply:
+          "I can help with four things: list hospitals and clinics, show your upcoming appointments, find quieter available booking times, and explain booking rules like occupied or duplicate slots. Try asking: “quiet cardiology slots tomorrow” or “what are my appointments?”",
+        toolCalls: [],
+      };
+    }
 
     if (asksRules) {
       return {
@@ -241,6 +277,72 @@ export const aiRoutes: FastifyPluginAsync = async (app) => {
                   )
                   .join("\n")}`
               : `I do not see any open ${department.name} slots right now. Try another clinic or check back later.`,
+          toolCalls: [],
+        };
+      }
+    }
+
+    if (wantsAvailability && !parsed.data.departmentId) {
+      const alias = departmentAlias(text);
+      const departments = await app.prisma.department.findMany({
+        include: { hospital: true },
+        orderBy: [{ hospital: { name: "asc" } }, { name: "asc" }],
+      });
+      const department =
+        departments.find((d) => normalize(d.name) === normalize(alias ?? "")) ??
+        departments.find((d) => text.includes(normalize(d.name))) ??
+        departments.find((d) => text.includes(normalize(d.hospital.name)));
+
+      if (department) {
+        const range = requestedDayRange(text);
+        const slots = await app.prisma.timeSlot.findMany({
+          where: {
+            departmentId: department.id,
+            startsAt: { gte: range.start, lte: range.end },
+          },
+          include: { doctor: true },
+          orderBy: { startsAt: "asc" },
+          take: 60,
+        });
+        const open = slots
+          .map((slot) => {
+            const remaining = Math.max(0, slot.capacity - slot.bookedCount);
+            const fillRatio = slot.capacity === 0 ? 1 : slot.bookedCount / slot.capacity;
+            const demand = demandLevelForSlot(slot.startsAt, fillRatio);
+            return { slot, remaining, demand };
+          })
+          .filter((s) => s.remaining > 0)
+          .sort((a, b) => {
+            if (/\bquiet|less busy|low demand\b/.test(text)) {
+              return a.demand.score - b.demand.score;
+            }
+            return a.slot.startsAt.getTime() - b.slot.startsAt.getTime();
+          })
+          .slice(0, 5);
+        return {
+          source: "rules",
+          reply:
+            open.length > 0
+              ? `Here are ${/\bquiet|less busy|low demand\b/.test(text) ? "quieter" : "available"} ${
+                  department.name
+                } times at ${department.hospital.name}:\n${open
+                  .map(
+                    (s, i) =>
+                      `${i + 1}. ${formatDateTime(s.slot.startsAt)}${
+                        s.slot.doctor ? ` with ${s.slot.doctor.fullName}` : ""
+                      } (${s.demand.level.toLowerCase()} demand).`,
+                  )
+                  .join("\n")}`
+              : `I do not see open ${department.name} slots for that date range. Try another day or clinic.`,
+          toolCalls: [],
+        };
+      }
+
+      if (/\bcardio|derm|skin|heart|kidney|pediatric|paediatric|ortho|emergency\b/.test(text)) {
+        return {
+          source: "rules",
+          reply:
+            "I could not match that to a clinic confidently. Available clinics are Cardiology, Dermatology, Emergency Medicine, Nephrology & Urology, Orthopedics, and Pediatrics.",
           toolCalls: [],
         };
       }

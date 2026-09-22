@@ -248,7 +248,11 @@ export const api = {
       method: "POST",
       body: JSON.stringify(body),
     }),
-  assistant: (body: { message: string; departmentId?: string }) =>
+  assistant: (body: {
+    message: string;
+    departmentId?: string;
+    history?: Array<{ role: "user" | "assistant"; text: string }>;
+  }) =>
     request<{ source: string; reply: string }>("/api/ai/assistant", {
       method: "POST",
       body: JSON.stringify(body),

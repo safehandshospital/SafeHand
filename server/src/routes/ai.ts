@@ -14,6 +14,15 @@ const recommendSchema = z.object({
 const chatSchema = z.object({
   message: z.string().min(1).max(2000),
   departmentId: z.string().optional(),
+  history: z
+    .array(
+      z.object({
+        role: z.enum(["user", "assistant"]),
+        text: z.string().max(2000),
+      }),
+    )
+    .max(12)
+    .optional(),
 });
 
 const outlookSchema = z.object({
@@ -40,6 +49,13 @@ function requestedDayRange(text: string) {
   if (/\btomorrow\b/.test(text)) {
     start.setDate(start.getDate() + 1);
   }
+  if (/\bthis week\b/.test(text)) {
+    start.setHours(0, 0, 0, 0);
+    const end = new Date(start);
+    end.setDate(end.getDate() + 6);
+    end.setHours(23, 59, 59, 999);
+    return { start, end };
+  }
   start.setHours(/\btoday\b/.test(text) ? now.getHours() : 0, /\btoday\b/.test(text) ? now.getMinutes() : 0, 0, 0);
 
   const end = new Date(start);
@@ -59,6 +75,16 @@ function departmentAlias(text: string) {
   return null;
 }
 
+function ordinalIndex(text: string) {
+  if (/\b(first|1st|number one|#1)\b/.test(text)) return 0;
+  if (/\b(second|2nd|number two|#2)\b/.test(text)) return 1;
+  if (/\b(third|3rd|number three|#3)\b/.test(text)) return 2;
+  if (/\b(fourth|4th|number four|#4)\b/.test(text)) return 3;
+  if (/\b(fifth|5th|number five|#5)\b/.test(text)) return 4;
+  if (/\b(sixth|6th|number six|#6)\b/.test(text)) return 5;
+  return null;
+}
+
 async function clinicChoices(app: Parameters<FastifyPluginAsync>[0]) {
   const departments = await app.prisma.department.findMany({
     select: {
@@ -68,6 +94,53 @@ async function clinicChoices(app: Parameters<FastifyPluginAsync>[0]) {
     orderBy: [{ hospital: { name: "asc" } }, { name: "asc" }],
   });
   return departments.map((d) => `${d.name} at ${d.hospital.name}`).join(", ");
+}
+
+async function resolveDepartmentFromText(
+  app: Parameters<FastifyPluginAsync>[0],
+  text: string,
+  history: Array<{ role: "user" | "assistant"; text: string }> = [],
+) {
+  const alias = departmentAlias(text);
+  const departments = await app.prisma.department.findMany({
+    include: { hospital: true },
+    orderBy: [{ hospital: { name: "asc" } }, { name: "asc" }],
+  });
+
+  const normalized = normalize(text);
+  const direct =
+    departments.find((d) => normalize(d.name) === normalize(alias ?? "")) ??
+    departments.find((d) => normalized.includes(normalize(d.name))) ??
+    departments.find((d) => normalized.includes(normalize(d.hospital.name))) ??
+    departments.find((d) => {
+      const hospitalWords = normalize(d.hospital.name).split(" ");
+      return hospitalWords.length >= 2 && hospitalWords.every((w) => normalized.includes(w));
+    });
+  if (direct) return direct;
+
+  const recent = history
+    .slice(-6)
+    .map((m) => m.text)
+    .join("\n");
+  const recentNormalized = normalize(recent);
+
+  const index = ordinalIndex(normalized);
+  if (index !== null) {
+    const listed = departments.filter((d) => recentNormalized.includes(normalize(d.hospital.name)));
+    if (listed[index]) return listed[index];
+  }
+
+  if (/\b(this|that|the one|same one|it)\b/.test(normalized)) {
+    for (let i = history.length - 1; i >= 0; i--) {
+      const previous = normalize(history[i]!.text);
+      const found = departments.find(
+        (d) => previous.includes(normalize(d.name)) || previous.includes(normalize(d.hospital.name)),
+      );
+      if (found) return found;
+    }
+  }
+
+  return null;
 }
 
 export const aiRoutes: FastifyPluginAsync = async (app) => {
@@ -206,6 +279,24 @@ export const aiRoutes: FastifyPluginAsync = async (app) => {
       };
     }
 
+    const specificDepartment = await resolveDepartmentFromText(app, text, parsed.data.history);
+    const broadHospitalQuestion = /\b(which|what|list|all|available)\b.*\b(hospitals?|clinics?|departments?)\b/.test(text);
+    if (specificDepartment && wantsHospitals && !broadHospitalQuestion) {
+      const openSlots = await app.prisma.timeSlot.findMany({
+        where: { departmentId: specificDepartment.id, startsAt: { gte: new Date() } },
+        select: { capacity: true, bookedCount: true },
+      });
+      const open = openSlots.reduce(
+        (sum, slot) => sum + Math.max(0, slot.capacity - slot.bookedCount),
+        0,
+      );
+      return {
+        source: "rules",
+        reply: `${specificDepartment.hospital.name} offers ${specificDepartment.name} in this app. There are ${open} open slot(s). Ask “what days are free for ${specificDepartment.name}?” or “quiet ${specificDepartment.name} slots tomorrow” and I’ll show times.`,
+        toolCalls: [],
+      };
+    }
+
     if (wantsAppointments && !wantsAvailability) {
       const appointments = await app.prisma.appointment.findMany({
         where: { userId: request.user.sub, status: "BOOKED" },
@@ -304,15 +395,7 @@ export const aiRoutes: FastifyPluginAsync = async (app) => {
     }
 
     if (wantsAvailability && !parsed.data.departmentId) {
-      const alias = departmentAlias(text);
-      const departments = await app.prisma.department.findMany({
-        include: { hospital: true },
-        orderBy: [{ hospital: { name: "asc" } }, { name: "asc" }],
-      });
-      const department =
-        departments.find((d) => normalize(d.name) === normalize(alias ?? "")) ??
-        departments.find((d) => text.includes(normalize(d.name))) ??
-        departments.find((d) => text.includes(normalize(d.hospital.name)));
+      const department = await resolveDepartmentFromText(app, text, parsed.data.history);
 
       if (department) {
         const range = requestedDayRange(text);
@@ -371,6 +454,43 @@ export const aiRoutes: FastifyPluginAsync = async (app) => {
       return {
         source: "rules",
         reply: `Which clinic should I check? Available options are: ${await clinicChoices(app)}.`,
+        toolCalls: [],
+      };
+    }
+
+    const followUpDepartment = specificDepartment;
+    if (followUpDepartment && /\b(days?|when|schedule|this|that|first|second|third|37|military)\b/.test(text)) {
+      const range = requestedDayRange(/\bthis week\b/.test(text) ? text : `${text} this week`);
+      const slots = await app.prisma.timeSlot.findMany({
+        where: {
+          departmentId: followUpDepartment.id,
+          startsAt: { gte: range.start, lte: range.end },
+        },
+        orderBy: { startsAt: "asc" },
+        take: 80,
+      });
+      const openByDay = new Map<string, number>();
+      for (const slot of slots) {
+        const open = Math.max(0, slot.capacity - slot.bookedCount);
+        if (open <= 0) continue;
+        const key = new Intl.DateTimeFormat("en-GH", {
+          weekday: "short",
+          month: "short",
+          day: "numeric",
+        }).format(slot.startsAt);
+        openByDay.set(key, (openByDay.get(key) ?? 0) + open);
+      }
+      return {
+        source: "rules",
+        reply:
+          openByDay.size > 0
+            ? `${followUpDepartment.name} at ${followUpDepartment.hospital.name} has open slots on:\n${[
+                ...openByDay.entries(),
+              ]
+                .slice(0, 7)
+                .map(([day, count]) => `- ${day}: ${count} open slot(s)`)
+                .join("\n")}`
+            : `I do not see open ${followUpDepartment.name} slots for that range.`,
         toolCalls: [],
       };
     }

@@ -169,8 +169,13 @@ export default function AssistantScreen() {
     ]);
     setLoading(true);
     try {
+      const history = messages
+        .filter((m) => m.id !== "welcome")
+        .slice(-8)
+        .map((m) => ({ role: m.role, text: m.text }));
       const res = await api.assistant({
         message: `${text}${attachmentNote}`.trim(),
+        history,
       });
       setMessages((m) => [
         ...m,

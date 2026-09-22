@@ -7,95 +7,149 @@ const prisma = new PrismaClient();
 
 const HOSPITALS = [
   {
-    name: "SafeHand Medical Centre",
+    name: "Korle Bu Teaching Hospital",
     description:
-      "Main outpatient campus with family care, specialty clinics, and diagnostics.",
-    address: "Outpatient Road, Accra",
+      "Ghana's premier teaching and quaternary referral hospital, serving specialist and national referral needs.",
+    address: "Guggisberg Avenue, Korle Bu, Accra. Digital address: GA-221-1570",
     city: "Accra",
-    phone: "+233 30 200 1100",
+    phone: "+233 302 739 510 / +233 244 406 700",
     imageUrl:
       "https://images.unsplash.com/photo-1586773860418-d37222d8fce3?auto=format&fit=crop&w=1200&q=80",
   },
   {
-    name: "Korle Sunrise Hospital",
+    name: "37 Military Hospital",
     description:
-      "Busy urban hospital focused on children, heart care, and general outpatient visits.",
-    address: "Independence Avenue, Accra",
+      "Military teaching and specialist hospital on Liberation Road, also open to the general public.",
+    address: "Liberation Road, Accra",
     city: "Accra",
-    phone: "+233 30 200 2200",
+    phone: "+233 302 767 691 / Emergency: +233 256 112 222",
     imageUrl:
       "https://images.unsplash.com/photo-1538108149393-fbbd81895907?auto=format&fit=crop&w=1200&q=80",
   },
   {
-    name: "Garden City Community Hospital",
+    name: "Greater Accra Regional Hospital",
     description:
-      "Kumasi campus for outpatient care, rehab, dermatology, and follow-up clinics.",
-    address: "Lake Road, Kumasi",
-    city: "Kumasi",
-    phone: "+233 32 200 3300",
+      "Ridge Hospital is a public regional referral hospital providing secondary to tertiary care.",
+    address: "Castle Road, Ridge, Accra",
+    city: "Accra",
+    phone: "+233 302 428 460 / +233 551 727 552",
     imageUrl:
       "https://images.unsplash.com/photo-1516549655169-df83a0774514?auto=format&fit=crop&w=1200&q=80",
+  },
+  {
+    name: "University of Ghana Medical Centre",
+    description:
+      "Quaternary medical, training and research centre on the University of Ghana campus.",
+    address: "University of Ghana Medical Centre, Legon. GPS: GA-337-6980",
+    city: "Accra",
+    phone: "+233 302 550 843 / +233 302 550 844 / +233 551 995 599",
+    imageUrl:
+      "https://images.unsplash.com/photo-1576091160399-112ba8d25d1d?auto=format&fit=crop&w=1200&q=80",
+  },
+  {
+    name: "Nyaho Medical Centre",
+    description:
+      "Private multispecialty medical centre with 24/7 main branch services in Airport Residential Area.",
+    address: "35 Kofi Annan Street, Airport Residential Area, Accra",
+    city: "Accra",
+    phone: "+233 307 086 490 / +233 501 436 662",
+    imageUrl:
+      "https://images.unsplash.com/photo-1504439468489-c8920d796a29?auto=format&fit=crop&w=1200&q=80",
+  },
+  {
+    name: "Komfo Anokye Teaching Hospital",
+    description:
+      "Public teaching and specialist referral hospital serving Kumasi, Ashanti Region and beyond.",
+    address: "Bantama, Kumasi, Ashanti Region",
+    city: "Kumasi",
+    phone: "+233 556 490 029",
+    imageUrl:
+      "https://images.unsplash.com/photo-1587351021759-3e566b6af7cc?auto=format&fit=crop&w=1200&q=80",
   },
 ];
 
 const DEPARTMENTS = [
   {
-    hospitalName: "SafeHand Medical Centre",
-    name: "General Practice",
-    description: "Primary care visits and follow ups.",
+    hospitalName: "Korle Bu Teaching Hospital",
+    name: "Nephrology & Urology",
+    description: "Kidney, urinary tract and specialist medical review.",
     summary:
-      "First stop for adults and families. Wellness checks, chronic care, and same week sick visits.",
-    category: "Primary care clinic",
+      "Specialist assessment for kidney function, urinary symptoms, hypertension and referral follow ups.",
+    category: "Specialist renal and urology clinic",
     treatment:
-      "Shared care plans, medication review, and referrals when a specialist is needed.",
+      "Consultant review, renal risk assessment, medication review and diagnostic follow up.",
     services: [
-      "Wellness review",
-      "Chronic care follow up",
-      "Sick visits",
-      "Referral letters",
-      "Blood pressure clinic",
+      "Nephrology consult",
+      "Urology review",
+      "Kidney function follow up",
+      "Hypertension review",
+      "Referral assessment",
     ],
-    priceRange: "₵60 to ₵180",
-    location: "Outpatient Block A",
-    wing: "Ground floor, Bay 1 to 4",
-    hours: "Mon to Fri 08:00 to 17:00, Sat 09:00 to 13:00",
-    phone: "+233 30 200 1101",
+    priceRange: "Call hospital for current fees",
+    location: "Guggisberg Avenue, Korle Bu",
+    wing: "Specialist outpatient services",
+    hours: "Mon to Fri 08:00 to 16:00",
+    phone: "+233 302 739 510",
     imageUrl:
       "https://images.unsplash.com/photo-1519494026892-80bbd2d6fd0d?auto=format&fit=crop&w=1200&q=80",
   },
   {
-    hospitalName: "SafeHand Medical Centre",
-    name: "Pediatrics",
-    description: "Care for children and teens.",
+    hospitalName: "37 Military Hospital",
+    name: "Dermatology",
+    description: "Skin care and specialist dermatology review.",
     summary:
-      "Growth checks, vaccines, and acute care in a child friendly suite.",
-    category: "Children outpatient clinic",
+      "Outpatient review for rashes, chronic skin conditions, acne, eczema and lesion checks.",
+    category: "Specialist skin clinic",
     treatment:
-      "Age appropriate assessment with caregivers, growth tracking, and gentle procedures.",
+      "Clinical dermatology assessment with treatment plans and follow-up scheduling.",
     services: [
-      "Growth checks",
-      "Vaccine counselling",
-      "Fever review",
-      "School medical notes",
-      "Teen consults",
+      "Rash and eczema review",
+      "Acne plans",
+      "Mole checks",
+      "Dermatology consult",
+      "Follow-up care",
     ],
-    priceRange: "₵80 to ₵220",
-    location: "Children Pavilion",
-    wing: "Level 1, Blue wing",
-    hours: "Mon to Fri 08:00 to 16:30",
-    phone: "+233 30 200 1102",
+    priceRange: "Call hospital for current fees",
+    location: "Liberation Road, Accra",
+    wing: "Medical Division",
+    hours: "Mon to Fri 08:00 to 16:00",
+    phone: "+233 302 767 691",
     imageUrl:
-      "https://images.unsplash.com/photo-1631217868264-e5b90bb7e133?auto=format&fit=crop&w=1200&q=80",
+      "https://images.unsplash.com/photo-1629909613654-28e377c37b09?auto=format&fit=crop&w=1200&q=80",
   },
   {
-    hospitalName: "Korle Sunrise Hospital",
+    hospitalName: "Greater Accra Regional Hospital",
+    name: "Emergency Medicine",
+    description: "Emergency, urgent care and referral assessment.",
+    summary:
+      "Emergency and referral support for urgent outpatient and acute care needs at Ridge Hospital.",
+    category: "Emergency and referral clinic",
+    treatment:
+      "Triage, stabilisation, referral coordination and urgent clinical review.",
+    services: [
+      "Emergency review",
+      "Referral assessment",
+      "Outpatient triage",
+      "Urgent clinical review",
+      "Care coordination",
+    ],
+    priceRange: "Call hospital for current fees",
+    location: "Castle Road, Ridge",
+    wing: "Emergency / referrals",
+    hours: "Emergency support available daily; appointments Mon to Fri 08:00 to 16:00",
+    phone: "+233 302 428 477 / +233 302 428 460",
+    imageUrl:
+      "https://images.unsplash.com/photo-1516549655169-df83a0774514?auto=format&fit=crop&w=1200&q=80",
+  },
+  {
+    hospitalName: "University of Ghana Medical Centre",
     name: "Cardiology",
     description: "Heart and vascular specialty care.",
     summary:
-      "ECG review, blood pressure clinics, and specialist consults for chest pain and risk assessment.",
+      "Cardiology consultation, cardiovascular risk review and follow-up care at UGMC.",
     category: "Specialty heart clinic",
     treatment:
-      "Cardiovascular evaluation, ECG review, risk scoring, and medication titration.",
+      "Cardiovascular evaluation, ECG review, risk scoring and medication titration.",
     services: [
       "Cardiology consult",
       "ECG review",
@@ -103,59 +157,59 @@ const DEPARTMENTS = [
       "Chest pain assessment",
       "Post admission follow up",
     ],
-    priceRange: "₵150 to ₵420",
-    location: "Specialty Tower",
-    wing: "Level 3, Heart suite",
-    hours: "Mon to Thu 08:30 to 16:00, Fri 08:30 to 14:00",
-    phone: "+233 30 200 1103",
+    priceRange: "Call hospital for current fees",
+    location: "University of Ghana Medical Centre, Legon",
+    wing: "Specialist outpatient services",
+    hours: "Mon to Fri 08:00 to 16:00",
+    phone: "+233 302 550 843",
     imageUrl:
       "https://images.unsplash.com/photo-1581595220892-b0739db3b8c5?auto=format&fit=crop&w=1200&q=80",
   },
   {
-    hospitalName: "Garden City Community Hospital",
-    name: "Dermatology",
-    description: "Skin care and minor procedures.",
+    hospitalName: "Nyaho Medical Centre",
+    name: "Pediatrics",
+    description: "Child health, family care and paediatric review.",
     summary:
-      "Rash review, acne and eczema plans, mole checks, and scheduled minor procedures.",
-    category: "Skin clinic",
+      "Paediatric and family-centred outpatient care at Nyaho's Airport main branch.",
+    category: "Children outpatient clinic",
     treatment:
-      "Clinical dermatology with topical or systemic plans and minor procedures when needed.",
+      "Age-appropriate assessment with caregiver counselling, growth review and referral planning.",
     services: [
-      "Rash and eczema review",
-      "Acne plans",
-      "Mole checks",
-      "Cryotherapy booking",
-      "Post procedure follow up",
+      "Growth checks",
+      "Fever review",
+      "Vaccine counselling",
+      "School medical notes",
+      "Teen consults",
     ],
-    priceRange: "₵100 to ₵350",
-    location: "Outpatient Block B",
-    wing: "Level 2, Rooms D1 to D6",
-    hours: "Tue to Fri 09:00 to 16:00",
-    phone: "+233 30 200 1104",
+    priceRange: "Call hospital for current fees",
+    location: "35 Kofi Annan Street, Airport Residential Area",
+    wing: "Main Branch",
+    hours: "Main Branch 24/7; outpatient booking hours vary",
+    phone: "+233 307 086 490 / +233 501 436 662",
     imageUrl:
-      "https://images.unsplash.com/photo-1629909613654-28e377c37b09?auto=format&fit=crop&w=1200&q=80",
+      "https://images.unsplash.com/photo-1631217868264-e5b90bb7e133?auto=format&fit=crop&w=1200&q=80",
   },
   {
-    hospitalName: "Garden City Community Hospital",
+    hospitalName: "Komfo Anokye Teaching Hospital",
     name: "Orthopedics",
     description: "Joints, soft tissue, and rehab planning.",
     summary:
-      "MSK assessment, imaging review, and physio pathways for sports and workplace injuries.",
-    category: "MSK and rehab clinic",
+      "Orthopaedic and musculoskeletal assessment at Kumasi's major teaching hospital.",
+    category: "MSK and orthopaedic clinic",
     treatment:
-      "Hands on assessment with imaging review and staged rehab with physiotherapy partners.",
+      "Specialist orthopaedic assessment with imaging review and surgical or rehab planning.",
     services: [
       "Joint assessment",
       "Sports injury review",
       "Imaging discussion",
       "Physio pathway planning",
-      "Injection clinic booking",
+      "Post-operative follow up",
     ],
-    priceRange: "₵120 to ₵380",
-    location: "Rehab and MSK Centre",
-    wing: "Ground floor, near gym",
+    priceRange: "Call hospital for current fees",
+    location: "Bantama, Kumasi",
+    wing: "Orthopaedic services",
     hours: "Mon to Fri 08:00 to 17:00",
-    phone: "+233 30 200 1105",
+    phone: "+233 556 490 029",
     imageUrl:
       "https://images.unsplash.com/photo-1579684385127-1ef15d508118?auto=format&fit=crop&w=1200&q=80",
   },
@@ -299,6 +353,49 @@ async function main() {
       ],
     },
   ],
+  "Nephrology & Urology": [
+    {
+      topic: "Kidney and urinary review",
+      purpose:
+        "Review kidney function trends, blood-pressure history and urinary symptoms with the specialist team.",
+      description:
+        "Specialist outpatient visit for renal and urology assessment after referral. Focus is on test review, medication safety and deciding whether further imaging or follow-up is needed.",
+      files: [
+        {
+          name: "Kidney function panel.pdf",
+          kind: "LAB",
+          sizeLabel: "190 KB",
+          note: "Recent creatinine and eGFR results",
+          url: "https://www.w3.org/WAI/ER/tests/xhtml/testfiles/resources/pdf/dummy.pdf",
+        },
+        {
+          name: "Referral letter.pdf",
+          kind: "REPORT",
+          sizeLabel: "210 KB",
+          note: "Primary care referral summary",
+          url: "https://www.w3.org/WAI/ER/tests/xhtml/testfiles/resources/pdf/dummy.pdf",
+        },
+      ],
+    },
+  ],
+  "Emergency Medicine": [
+    {
+      topic: "Urgent referral review",
+      purpose:
+        "Triage an urgent outpatient concern and decide whether same-day escalation is needed.",
+      description:
+        "Emergency medicine review for referral assessment, stabilisation planning and coordination with the right specialty service.",
+      files: [
+        {
+          name: "Triage note.pdf",
+          kind: "REPORT",
+          sizeLabel: "160 KB",
+          note: "Initial assessment and vital signs",
+          url: "https://www.w3.org/WAI/ER/tests/xhtml/testfiles/resources/pdf/dummy.pdf",
+        },
+      ],
+    },
+  ],
   Pediatrics: [
     {
       topic: "Kids growth & vaccine check",
@@ -427,27 +524,39 @@ const DOCTORS: Record<
     avatarUrl:
       "https://images.unsplash.com/photo-1559839734-2b71ea197ec2?auto=format&fit=crop&w=256&h=256&q=80",
   },
+  "Nephrology & Urology": {
+    fullName: "Prof. Vincent Boima",
+    specialty: "Consultant nephrologist",
+    avatarUrl:
+      "https://images.unsplash.com/photo-1559839734-2b71ea197ec2?auto=format&fit=crop&w=256&h=256&q=80",
+  },
+  "Emergency Medicine": {
+    fullName: "Dr. Leslie Issa Adam-Zakariah",
+    specialty: "Emergency and referral leadership",
+    avatarUrl:
+      "https://images.unsplash.com/photo-1612349317150-e413f6a5b16d?auto=format&fit=crop&w=256&h=256&q=80",
+  },
   Pediatrics: {
-    fullName: "Dr. Kojo Mensah",
-    specialty: "Pediatric outpatient care",
+    fullName: "Dr. Victoria Lokko",
+    specialty: "Specialist paediatrician",
     avatarUrl:
       "https://images.unsplash.com/photo-1612349317150-e413f6a5b16d?auto=format&fit=crop&w=256&h=256&q=80",
   },
   Cardiology: {
-    fullName: "Dr. Abena Owusu",
-    specialty: "Cardiovascular medicine",
+    fullName: "Dr. Martin Adu-Adadey",
+    specialty: "Cardiology consultant",
     avatarUrl:
       "https://images.unsplash.com/photo-1594824476967-48c8b964273f?auto=format&fit=crop&w=256&h=256&q=80",
   },
   Dermatology: {
-    fullName: "Dr. Nii Armah",
-    specialty: "Clinical dermatology",
+    fullName: "Dr. J. Aryee-Boi",
+    specialty: "Dermatology",
     avatarUrl:
       "https://images.unsplash.com/photo-1622253692010-333f2da6031d?auto=format&fit=crop&w=256&h=256&q=80",
   },
   Orthopedics: {
-    fullName: "Dr. Ama Sarpong",
-    specialty: "Musculoskeletal care",
+    fullName: "Dr. (Med) Paa Kwesi Baidoo",
+    specialty: "Consultant orthopaedic surgeon",
     avatarUrl:
       "https://images.unsplash.com/photo-1651008376811-b90baee60c1f?auto=format&fit=crop&w=256&h=256&q=80",
   },

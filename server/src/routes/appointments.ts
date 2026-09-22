@@ -11,9 +11,28 @@ const bookSchema = z.object({
   aiRecommended: z.boolean().optional(),
 });
 
+const customBookSchema = z.object({
+  departmentId: z.string().min(1),
+  startsAt: z.string().datetime(),
+  topic: z.string().min(2).max(120).optional(),
+  purpose: z.string().min(2).max(500).optional(),
+  description: z.string().max(2000).optional(),
+  notes: z.string().max(500).optional(),
+});
+
 const rescheduleSchema = z.object({
   newTimeSlotId: z.string().min(1),
 });
+
+function isUniqueOrOverbookError(err: unknown) {
+  return (
+    (err instanceof Error && err.message === "OVERBOOK") ||
+    (typeof err === "object" &&
+      err !== null &&
+      "code" in err &&
+      (err as { code?: string }).code === "P2002")
+  );
+}
 
 export const appointmentRoutes: FastifyPluginAsync = async (app) => {
   const auth = { preHandler: [(app as any).authenticate] };
@@ -124,10 +143,7 @@ export const appointmentRoutes: FastifyPluginAsync = async (app) => {
         },
       });
     }).catch(async (err) => {
-      if (
-        (err instanceof Error && err.message === "OVERBOOK") ||
-        (typeof err === "object" && err !== null && "code" in err && (err as { code?: string }).code === "P2002")
-      ) {
+      if (isUniqueOrOverbookError(err)) {
         return null;
       }
       throw err;
@@ -143,6 +159,126 @@ export const appointmentRoutes: FastifyPluginAsync = async (app) => {
         action: "BOOK",
         entity: "Appointment",
         entityId: appointment.id,
+      },
+    });
+
+    return { appointment };
+  });
+
+  app.post("/custom", auth, async (request, reply) => {
+    const parsed = customBookSchema.safeParse(request.body);
+    if (!parsed.success) {
+      return reply.code(400).send({ error: parsed.error.flatten() });
+    }
+
+    const { sub } = request.user;
+    const startsAt = new Date(parsed.data.startsAt);
+    if (Number.isNaN(startsAt.getTime())) {
+      return reply.code(400).send({ error: "Invalid appointment date/time" });
+    }
+    if (startsAt.getTime() <= Date.now()) {
+      return reply.code(400).send({ error: "Choose a future date and time" });
+    }
+
+    const endsAt = new Date(startsAt.getTime() + 30 * 60 * 1000);
+    const department = await app.prisma.department.findUnique({
+      where: { id: parsed.data.departmentId },
+      include: {
+        doctors: { orderBy: { fullName: "asc" }, take: 1 },
+      },
+    });
+    if (!department) {
+      return reply.code(404).send({ error: "Department not found" });
+    }
+
+    const doctor = department.doctors[0] ?? null;
+    const topic =
+      parsed.data.topic?.trim() ||
+      `${department.name} consultation`;
+    const purpose =
+      parsed.data.purpose?.trim() ||
+      `Discuss this ${department.name.toLowerCase()} visit.`;
+    const title = buildAppointmentTitle({
+      topic,
+      departmentName: department.name,
+      doctorName: doctor?.fullName,
+    });
+
+    const appointment = await app.prisma.$transaction(async (tx) => {
+      const slot = await tx.timeSlot.upsert({
+        where: {
+          departmentId_startsAt: {
+            departmentId: department.id,
+            startsAt,
+          },
+        },
+        update: {},
+        create: {
+          departmentId: department.id,
+          doctorId: doctor?.id,
+          startsAt,
+          endsAt,
+          capacity: 1,
+          bookedCount: 0,
+        },
+      });
+
+      const claimed = await tx.timeSlot.updateMany({
+        where: {
+          id: slot.id,
+          bookedCount: { lt: 1 },
+          capacity: { gt: 0 },
+        },
+        data: {
+          bookedCount: 1,
+          capacity: 1,
+          endsAt,
+          doctorId: slot.doctorId ?? doctor?.id,
+        },
+      });
+      if (claimed.count !== 1) {
+        throw new Error("OVERBOOK");
+      }
+
+      return tx.appointment.create({
+        data: {
+          userId: sub,
+          departmentId: department.id,
+          doctorId: slot.doctorId ?? doctor?.id,
+          timeSlotId: slot.id,
+          title,
+          topic,
+          purpose,
+          description: parsed.data.description?.trim() || null,
+          notes: parsed.data.notes,
+          aiRecommended: false,
+          status: "BOOKED",
+        },
+        include: {
+          department: { include: { hospital: true } },
+          doctor: true,
+          timeSlot: true,
+          healthFiles: true,
+        },
+      });
+    }).catch((err) => {
+      if (isUniqueOrOverbookError(err)) return null;
+      throw err;
+    });
+
+    if (!appointment) {
+      return reply
+        .code(409)
+        .send({ error: "That date and time is already occupied. Please choose another time." });
+    }
+
+    await app.prisma.auditLog.create({
+      data: {
+        userId: sub,
+        action: "BOOK_CUSTOM",
+        entity: "Appointment",
+        entityId: appointment.id,
+        meta: { startsAt: startsAt.toISOString() },
       },
     });
 
@@ -251,10 +387,7 @@ export const appointmentRoutes: FastifyPluginAsync = async (app) => {
         include: { department: true, timeSlot: true, doctor: true },
       });
     }).catch((err) => {
-      if (
-        (err instanceof Error && err.message === "OVERBOOK") ||
-        (typeof err === "object" && err !== null && "code" in err && (err as { code?: string }).code === "P2002")
-      ) return null;
+      if (isUniqueOrOverbookError(err)) return null;
       throw err;
     });
 

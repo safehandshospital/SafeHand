@@ -59,6 +59,9 @@ function BookingWorkspace() {
   const [step, setStep] = useState<BookingStepId>("date");
   const [day, setDay] = useState<string | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [customDate, setCustomDate] = useState("");
+  const [customTime, setCustomTime] = useState("");
+  const [customStartsAt, setCustomStartsAt] = useState<string | null>(null);
   const [booking, setBooking] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [deptName, setDeptName] = useState("Clinic");
@@ -134,6 +137,12 @@ function BookingWorkspace() {
   }, [available, day]);
 
   const selected = available.find((s) => s.id === selectedId) ?? null;
+  const selectedStartsAt = selected?.startsAt ?? customStartsAt;
+  const selectedEndsAt = selected
+    ? selected.endsAt
+    : customStartsAt
+      ? new Date(new Date(customStartsAt).getTime() + 30 * 60 * 1000).toISOString()
+      : null;
 
   useEffect(() => {
     if (!day && days[0]) setDay(days[0].key);
@@ -147,16 +156,26 @@ function BookingWorkspace() {
   };
 
   const book = async () => {
-    if (!selectedId) return;
+    if (!selectedId && !customStartsAt) return;
     setBooking(true);
     setError(null);
     try {
-      await api.book({
-        timeSlotId: selectedId,
-        topic: topic.trim() || undefined,
-        purpose: purpose.trim() || undefined,
-        description: notes.trim() || undefined,
-      });
+      if (customStartsAt) {
+        await api.bookCustom({
+          departmentId: id,
+          startsAt: customStartsAt,
+          topic: topic.trim() || undefined,
+          purpose: purpose.trim() || undefined,
+          description: notes.trim() || undefined,
+        });
+      } else if (selectedId) {
+        await api.book({
+          timeSlotId: selectedId,
+          topic: topic.trim() || undefined,
+          purpose: purpose.trim() || undefined,
+          description: notes.trim() || undefined,
+        });
+      }
       await hapticSuccess();
       router.replace("/(tabs)/appointments");
     } catch (e) {
@@ -164,6 +183,28 @@ function BookingWorkspace() {
     } finally {
       setBooking(false);
     }
+  };
+
+  const chooseCustomTime = () => {
+    const date = customDate.trim();
+    const time = customTime.trim();
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || !/^\d{2}:\d{2}$/.test(time)) {
+      setError("Enter date as YYYY-MM-DD and time as HH:MM.");
+      return;
+    }
+    const startsAt = new Date(`${date}T${time}:00`);
+    if (Number.isNaN(startsAt.getTime())) {
+      setError("Enter a valid date and time.");
+      return;
+    }
+    if (startsAt.getTime() <= Date.now()) {
+      setError("Choose a future date and time.");
+      return;
+    }
+    setError(null);
+    setSelectedId(null);
+    setCustomStartsAt(startsAt.toISOString());
+    setStep("details");
   };
 
   const inputStyle = [
@@ -226,9 +267,49 @@ function BookingWorkspace() {
           <View style={styles.sectionIntro}>
             <AppText variant="h2">Pick a day</AppText>
             <AppText variant="caption" tone="secondary">
-              Only days with open times are shown.
+              Choose an open day, or enter your own exact date and time.
             </AppText>
           </View>
+          <Surface outlined style={styles.customCard}>
+            <View style={styles.sectionIntro}>
+              <AppText variant="h2">Exact date and time</AppText>
+              <AppText variant="caption" tone="secondary">
+                If that time is already booked, we will tell you before confirming.
+              </AppText>
+            </View>
+            <View style={[styles.customFields, isPhone && styles.customFieldsPhone]}>
+              <View style={styles.customField}>
+                <AppText variant="label" tone="tertiary">
+                  Date
+                </AppText>
+                <TextInput
+                  value={customDate}
+                  onChangeText={setCustomDate}
+                  placeholder="YYYY-MM-DD"
+                  placeholderTextColor={colors.inkFaint}
+                  style={inputStyle}
+                />
+              </View>
+              <View style={styles.customField}>
+                <AppText variant="label" tone="tertiary">
+                  Time
+                </AppText>
+                <TextInput
+                  value={customTime}
+                  onChangeText={setCustomTime}
+                  placeholder="HH:MM"
+                  placeholderTextColor={colors.inkFaint}
+                  style={inputStyle}
+                />
+              </View>
+            </View>
+            <Button
+              label="Use this date and time"
+              variant="accent"
+              onPress={chooseCustomTime}
+              disabled={!customDate.trim() || !customTime.trim()}
+            />
+          </Surface>
           <View style={[styles.dayGrid, isPhone && styles.dayGridPhone]}>
             {days.map((d) => {
               const active = day === d.key;
@@ -238,6 +319,7 @@ function BookingWorkspace() {
                   onPress={() => {
                     setDay(d.key);
                     setSelectedId(null);
+                    setCustomStartsAt(null);
                     setStep("time");
                   }}
                   style={[styles.dayPress, isPhone && styles.dayPressPhone]}
@@ -357,6 +439,17 @@ function BookingWorkspace() {
                 />
               ) : null}
             </Surface>
+          ) : selectedStartsAt && selectedEndsAt ? (
+            <Surface outlined style={styles.summaryCard}>
+              <DateTimeBlock
+                startsAt={selectedStartsAt}
+                endsAt={selectedEndsAt}
+                layout="stack"
+              />
+              <AppText variant="caption" tone="secondary">
+                Exact time requested by you.
+              </AppText>
+            </Surface>
           ) : null}
 
           <View style={styles.field}>
@@ -433,10 +526,10 @@ function BookingWorkspace() {
               Clinic
             </AppText>
             <AppText variant="h2">{deptName}</AppText>
-            {selected ? (
+            {selectedStartsAt && selectedEndsAt ? (
               <DateTimeBlock
-                startsAt={selected.startsAt}
-                endsAt={selected.endsAt}
+                startsAt={selectedStartsAt}
+                endsAt={selectedEndsAt}
                 layout="stack"
               />
             ) : null}
@@ -594,6 +687,22 @@ const styles = StyleSheet.create({
     width: "100%",
     minHeight: 64,
     justifyContent: "center",
+  },
+  customCard: {
+    gap: space[3],
+    width: "100%",
+  },
+  customFields: {
+    flexDirection: "row",
+    gap: space[3],
+  },
+  customFieldsPhone: {
+    flexDirection: "column",
+  },
+  customField: {
+    flex: 1,
+    gap: space[2],
+    minWidth: 0,
   },
   summaryCard: {
     gap: space[3],

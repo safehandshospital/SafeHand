@@ -214,6 +214,18 @@ export const api = {
       method: "POST",
       body: JSON.stringify(body),
     }),
+  bookCustom: (body: {
+    departmentId: string;
+    startsAt: string;
+    topic?: string;
+    purpose?: string;
+    description?: string;
+    notes?: string;
+  }) =>
+    request<{ appointment: unknown }>("/api/appointments/custom", {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
   cancel: (id: string) =>
     request<{ appointment: unknown }>(`/api/appointments/${id}/cancel`, {
       method: "POST",

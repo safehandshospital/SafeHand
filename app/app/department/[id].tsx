@@ -1,4 +1,4 @@
-import { createElement, useCallback, useEffect, useMemo, useState } from "react";
+import { createElement, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Platform,
@@ -56,6 +56,7 @@ type WebPickerInputProps = {
   min?: string;
   max?: string;
   step?: number;
+  inputRef?: React.RefObject<HTMLInputElement | null>;
   colors: {
     ink: string;
     inkFaint: string;
@@ -72,6 +73,7 @@ function WebPickerInput({
   min,
   max,
   step,
+  inputRef,
   colors,
 }: WebPickerInputProps) {
   const openPicker = (event: { currentTarget: HTMLInputElement }) => {
@@ -89,6 +91,7 @@ function WebPickerInput({
     min,
     max,
     step,
+    ref: inputRef,
     placeholder,
     onChange: (event: { currentTarget: HTMLInputElement }) =>
       onChangeText(event.currentTarget.value),
@@ -128,6 +131,8 @@ function BookingWorkspace() {
   const [customDate, setCustomDate] = useState("");
   const [customTime, setCustomTime] = useState("");
   const [customStartsAt, setCustomStartsAt] = useState<string | null>(null);
+  const customDateInputRef = useRef<HTMLInputElement | null>(null);
+  const customTimeInputRef = useRef<HTMLInputElement | null>(null);
   const [booking, setBooking] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [deptName, setDeptName] = useState("Clinic");
@@ -262,12 +267,15 @@ function BookingWorkspace() {
   };
 
   const chooseCustomTime = () => {
-    if (!customDate || !customTime) {
+    const dateValue = customDate || customDateInputRef.current?.value || "";
+    const timeValue = customTime || customTimeInputRef.current?.value || "";
+
+    if (!dateValue || !timeValue) {
       setError("Choose a date and time.");
       return;
     }
-    const selectedDay = parseDayKey(customDate);
-    const [hourRaw, minuteRaw] = customTime.split(":").map(Number);
+    const selectedDay = parseDayKey(dateValue);
+    const [hourRaw, minuteRaw] = timeValue.split(":").map(Number);
     const hour = hourRaw ?? NaN;
     const minute = minuteRaw ?? NaN;
     const startsAt = new Date(
@@ -307,6 +315,8 @@ function BookingWorkspace() {
       return;
     }
     setError(null);
+    setCustomDate(dateValue);
+    setCustomTime(timeValue);
     setSelectedId(null);
     setCustomStartsAt(startsAt.toISOString());
     setStep("details");
@@ -403,6 +413,7 @@ function BookingWorkspace() {
                   kind="date"
                   value={customDate}
                   onChangeText={handleCustomDateChange}
+                  inputRef={customDateInputRef}
                   placeholder="Select date"
                   min={customDateBounds.min}
                   max={customDateBounds.max}
@@ -430,6 +441,7 @@ function BookingWorkspace() {
                   kind="time"
                   value={customTime}
                   onChangeText={handleCustomTimeChange}
+                  inputRef={customTimeInputRef}
                   placeholder="Select time"
                   min="08:00"
                   max="16:00"
@@ -453,7 +465,6 @@ function BookingWorkspace() {
               label="Use this date and time"
               variant="accent"
               onPress={chooseCustomTime}
-              disabled={!customDate || !customTime}
             />
           </Surface>
           <View style={[styles.dayGrid, isPhone && styles.dayGridPhone]}>

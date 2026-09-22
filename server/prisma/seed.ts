@@ -163,7 +163,7 @@ const DEPARTMENTS = [
     hours: "Mon to Fri 08:00 to 16:00",
     phone: "+233 302 550 843",
     imageUrl:
-      "https://images.unsplash.com/photo-1581595220892-b0739db3b8c5?auto=format&fit=crop&w=1200&q=80",
+      "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcSwJTrKtlFOcsXvE70Lhjlgx0J3bnFgdxN6gGhJb8sKPA&s=10",
   },
   {
     hospitalName: "Nyaho Medical Centre",

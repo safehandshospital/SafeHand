@@ -157,7 +157,7 @@ export const appointmentRoutes: FastifyPluginAsync = async (app) => {
     });
 
     const appointment = await app.prisma.$transaction(async (tx) => {
-      await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtext(${patientClinicDayLockKey(
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${patientClinicDayLockKey(
         sub,
         slot.departmentId,
         slot.startsAt,
@@ -290,7 +290,7 @@ export const appointmentRoutes: FastifyPluginAsync = async (app) => {
     });
 
     const appointment = await app.prisma.$transaction(async (tx) => {
-      await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtext(${patientClinicDayLockKey(
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${patientClinicDayLockKey(
         sub,
         department.id,
         startsAt,
@@ -477,7 +477,7 @@ export const appointmentRoutes: FastifyPluginAsync = async (app) => {
     }
 
     const updated = await app.prisma.$transaction(async (tx) => {
-      await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtext(${patientClinicDayLockKey(
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${patientClinicDayLockKey(
         appointment.userId,
         newSlot.departmentId,
         newSlot.startsAt,

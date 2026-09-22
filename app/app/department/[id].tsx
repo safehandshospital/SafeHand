@@ -75,7 +75,12 @@ function WebPickerInput({
   colors,
 }: WebPickerInputProps) {
   const openPicker = (event: { currentTarget: HTMLInputElement }) => {
-    event.currentTarget.showPicker?.();
+    try {
+      event.currentTarget.showPicker?.();
+    } catch {
+      // Browsers only allow showPicker during a direct user gesture.
+      // A normal click still focuses the native input and opens supported pickers.
+    }
   };
 
   return createElement("input", {
@@ -87,8 +92,9 @@ function WebPickerInput({
     placeholder,
     onChange: (event: { currentTarget: HTMLInputElement }) =>
       onChangeText(event.currentTarget.value),
+    onInput: (event: { currentTarget: HTMLInputElement }) =>
+      onChangeText(event.currentTarget.value),
     onClick: openPicker,
-    onFocus: openPicker,
     style: {
       width: "100%",
       boxSizing: "border-box",

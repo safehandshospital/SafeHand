@@ -24,6 +24,9 @@ const rescheduleSchema = z.object({
   newTimeSlotId: z.string().min(1),
 });
 
+const CUSTOM_BOOKING_DAYS_AHEAD = 14;
+const CUSTOM_BOOKING_HOURS = new Set([8, 9, 10, 11, 13, 14, 15, 16]);
+
 function isUniqueOrOverbookError(err: unknown) {
   return (
     (err instanceof Error && err.message === "OVERBOOK") ||
@@ -32,6 +35,40 @@ function isUniqueOrOverbookError(err: unknown) {
       "code" in err &&
       (err as { code?: string }).code === "P2002")
   );
+}
+
+function startOfDay(date: Date) {
+  const copy = new Date(date);
+  copy.setHours(0, 0, 0, 0);
+  return copy;
+}
+
+function validateCustomStartsAt(startsAt: Date): string | null {
+  const now = new Date();
+  if (startsAt.getTime() <= now.getTime()) {
+    return "Choose a future date and time";
+  }
+
+  const latest = startOfDay(now);
+  latest.setDate(latest.getDate() + CUSTOM_BOOKING_DAYS_AHEAD);
+  latest.setHours(23, 59, 59, 999);
+  if (startsAt.getTime() > latest.getTime()) {
+    return "Choose a date within the next 14 days";
+  }
+
+  if (startsAt.getDay() === 0) {
+    return "This clinic is closed on Sundays. Choose Monday to Saturday.";
+  }
+
+  if (startsAt.getMinutes() !== 0 || startsAt.getSeconds() !== 0) {
+    return "Choose one of the listed appointment times.";
+  }
+
+  if (!CUSTOM_BOOKING_HOURS.has(startsAt.getHours())) {
+    return "Choose a time during hospital booking hours: 8:00 AM to 4:30 PM.";
+  }
+
+  return null;
 }
 
 export const appointmentRoutes: FastifyPluginAsync = async (app) => {
@@ -176,8 +213,9 @@ export const appointmentRoutes: FastifyPluginAsync = async (app) => {
     if (Number.isNaN(startsAt.getTime())) {
       return reply.code(400).send({ error: "Invalid appointment date/time" });
     }
-    if (startsAt.getTime() <= Date.now()) {
-      return reply.code(400).send({ error: "Choose a future date and time" });
+    const validationError = validateCustomStartsAt(startsAt);
+    if (validationError) {
+      return reply.code(400).send({ error: validationError });
     }
 
     const endsAt = new Date(startsAt.getTime() + 30 * 60 * 1000);

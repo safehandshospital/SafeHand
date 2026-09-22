@@ -59,8 +59,8 @@ function BookingWorkspace() {
   const [step, setStep] = useState<BookingStepId>("date");
   const [day, setDay] = useState<string | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [customDate, setCustomDate] = useState("");
-  const [customTime, setCustomTime] = useState("");
+  const [customDay, setCustomDay] = useState<string | null>(null);
+  const [customHour, setCustomHour] = useState<number | null>(null);
   const [customStartsAt, setCustomStartsAt] = useState<string | null>(null);
   const [booking, setBooking] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -136,6 +136,40 @@ function BookingWorkspace() {
     return available.filter((s) => dayKey(s.startsAt) === day);
   }, [available, day]);
 
+  const customDays = useMemo(() => {
+    const result: Array<{ key: string; label: string }> = [];
+    const now = new Date();
+    for (let offset = 0; offset < 14; offset++) {
+      const date = new Date(now);
+      date.setDate(date.getDate() + offset);
+      date.setHours(12, 0, 0, 0);
+      if (date.getDay() === 0) continue;
+      result.push({
+        key: dayKey(date),
+        label: formatCalendarDate(date),
+      });
+    }
+    return result;
+  }, []);
+
+  const customHours = useMemo(() => {
+    const now = new Date();
+    const selectedDay = customDay ? parseDayKey(customDay) : null;
+    return [8, 9, 10, 11, 13, 14, 15, 16].filter((hour) => {
+      if (!selectedDay) return true;
+      const candidate = new Date(
+        selectedDay.getFullYear(),
+        selectedDay.getMonth(),
+        selectedDay.getDate(),
+        hour,
+        0,
+        0,
+        0,
+      );
+      return candidate.getTime() > now.getTime();
+    });
+  }, [customDay]);
+
   const selected = available.find((s) => s.id === selectedId) ?? null;
   const selectedStartsAt = selected?.startsAt ?? customStartsAt;
   const selectedEndsAt = selected
@@ -186,13 +220,20 @@ function BookingWorkspace() {
   };
 
   const chooseCustomTime = () => {
-    const date = customDate.trim();
-    const time = customTime.trim();
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || !/^\d{2}:\d{2}$/.test(time)) {
-      setError("Enter date as YYYY-MM-DD and time as HH:MM.");
+    if (!customDay || customHour === null) {
+      setError("Choose a date and time.");
       return;
     }
-    const startsAt = new Date(`${date}T${time}:00`);
+    const selectedDay = parseDayKey(customDay);
+    const startsAt = new Date(
+      selectedDay.getFullYear(),
+      selectedDay.getMonth(),
+      selectedDay.getDate(),
+      customHour,
+      0,
+      0,
+      0,
+    );
     if (Number.isNaN(startsAt.getTime())) {
       setError("Enter a valid date and time.");
       return;
@@ -274,40 +315,101 @@ function BookingWorkspace() {
             <View style={styles.sectionIntro}>
               <AppText variant="h2">Exact date and time</AppText>
               <AppText variant="caption" tone="secondary">
-                If that time is already booked, we will tell you before confirming.
+                Choose from hospital hours. If the time is booked, we will tell you.
               </AppText>
             </View>
-            <View style={[styles.customFields, isPhone && styles.customFieldsPhone]}>
-              <View style={styles.customField}>
-                <AppText variant="label" tone="tertiary">
-                  Date
-                </AppText>
-                <TextInput
-                  value={customDate}
-                  onChangeText={setCustomDate}
-                  placeholder="YYYY-MM-DD"
-                  placeholderTextColor={colors.inkFaint}
-                  style={inputStyle}
-                />
+            <View style={styles.pickerBlock}>
+              <AppText variant="label" tone="tertiary">
+                Date
+              </AppText>
+              <View style={[styles.datePickerGrid, isPhone && styles.datePickerGridPhone]}>
+                {customDays.map((option) => {
+                  const active = customDay === option.key;
+                  return (
+                    <PressableScale
+                      key={option.key}
+                      onPress={() => {
+                        setCustomDay(option.key);
+                        setCustomHour(null);
+                        setCustomStartsAt(null);
+                        setSelectedId(null);
+                      }}
+                      style={[styles.customDatePress, isPhone && styles.customDatePressPhone]}
+                    >
+                      <Surface
+                        outlined
+                        style={[
+                          styles.customChoice,
+                          {
+                            backgroundColor: active ? colors.ink : colors.surfaceRaised,
+                            borderColor: active ? colors.ink : colors.hairline,
+                          },
+                        ]}
+                      >
+                        <AppText
+                          variant="caption"
+                          numberOfLines={1}
+                          style={{ color: active ? colors.inkInverse : colors.ink }}
+                        >
+                          {option.label}
+                        </AppText>
+                      </Surface>
+                    </PressableScale>
+                  );
+                })}
               </View>
-              <View style={styles.customField}>
-                <AppText variant="label" tone="tertiary">
-                  Time
-                </AppText>
-                <TextInput
-                  value={customTime}
-                  onChangeText={setCustomTime}
-                  placeholder="HH:MM"
-                  placeholderTextColor={colors.inkFaint}
-                  style={inputStyle}
-                />
+            </View>
+            <View style={styles.pickerBlock}>
+              <AppText variant="label" tone="tertiary">
+                Time
+              </AppText>
+              <View style={[styles.timePickerGrid, isPhone && styles.timeGridPhone]}>
+                {customHours.map((hour) => {
+                  const active = customHour === hour;
+                  return (
+                    <PressableScale
+                      key={hour}
+                      onPress={() => {
+                        setCustomHour(hour);
+                        setCustomStartsAt(null);
+                        setSelectedId(null);
+                      }}
+                      style={[styles.timePress, isPhone && styles.timePressPhone]}
+                    >
+                      <Surface
+                        outlined
+                        style={[
+                          styles.timeCard,
+                          {
+                            backgroundColor: active ? colors.ink : colors.surfaceRaised,
+                            borderColor: active ? colors.ink : colors.hairline,
+                          },
+                        ]}
+                      >
+                        <AppText
+                          variant="body"
+                          mono
+                          numberOfLines={1}
+                          style={{ color: active ? colors.inkInverse : colors.ink }}
+                        >
+                          {formatClockTime(new Date(2026, 0, 1, hour, 0, 0, 0))}
+                        </AppText>
+                      </Surface>
+                    </PressableScale>
+                  );
+                })}
               </View>
+              {customDay && customHours.length === 0 ? (
+                <AppText variant="caption" tone="secondary">
+                  No remaining hospital-hour times today. Choose another date.
+                </AppText>
+              ) : null}
             </View>
             <Button
               label="Use this date and time"
               variant="accent"
               onPress={chooseCustomTime}
-              disabled={!customDate.trim() || !customTime.trim()}
+              disabled={!customDay || customHour === null}
             />
           </Surface>
           <View style={[styles.dayGrid, isPhone && styles.dayGridPhone]}>
@@ -692,17 +794,32 @@ const styles = StyleSheet.create({
     gap: space[3],
     width: "100%",
   },
-  customFields: {
+  pickerBlock: { gap: space[2] },
+  datePickerGrid: {
     flexDirection: "row",
-    gap: space[3],
-  },
-  customFieldsPhone: {
-    flexDirection: "column",
-  },
-  customField: {
-    flex: 1,
+    flexWrap: "wrap",
     gap: space[2],
-    minWidth: 0,
+  },
+  datePickerGridPhone: {
+    gap: space[2],
+  },
+  customDatePress: {
+    width: "31%",
+    maxWidth: "31%",
+  },
+  customDatePressPhone: {
+    width: "48%",
+    maxWidth: "48%",
+  },
+  customChoice: {
+    minHeight: 44,
+    justifyContent: "center",
+    width: "100%",
+  },
+  timePickerGrid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: space[2],
   },
   summaryCard: {
     gap: space[3],

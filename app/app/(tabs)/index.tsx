@@ -22,6 +22,45 @@ import { space } from "@/theme/tokens";
 
 type Dept = ClinicDetail;
 
+function initials(name: string): string {
+  const parts = name.trim().split(/\s+/).filter(Boolean);
+  if (parts.length === 0) return "?";
+  if (parts.length === 1) return parts[0]!.slice(0, 2).toUpperCase();
+  return `${parts[0]![0]}${parts[parts.length - 1]![0]}`.toUpperCase();
+}
+
+function LeadAvatar({ name, imageUrl }: { name: string; imageUrl?: string | null }) {
+  const { colors } = useTheme();
+  const [failed, setFailed] = useState(false);
+  const uri = imageUrl?.trim();
+
+  return (
+    <View
+      style={[
+        styles.leadAvatar,
+        styles.leadAvatarFallback,
+        {
+          backgroundColor: colors.surfaceRaised,
+          borderColor: colors.hairline,
+        },
+      ]}
+    >
+      {uri && !failed ? (
+        <Image
+          source={{ uri }}
+          style={StyleSheet.absoluteFill}
+          contentFit="cover"
+          onError={() => setFailed(true)}
+        />
+      ) : (
+        <AppText variant="label" tone="secondary">
+          {initials(name)}
+        </AppText>
+      )}
+    </View>
+  );
+}
+
 export default function DepartmentsScreen() {
   const { colors } = useTheme();
   const router = useRouter();
@@ -202,11 +241,7 @@ export default function DepartmentsScreen() {
 
                   {lead ? (
                     <View style={styles.leadRow}>
-                      <Image
-                        source={{ uri: lead.avatarUrl }}
-                        style={styles.leadAvatar}
-                        contentFit="cover"
-                      />
+                      <LeadAvatar name={lead.fullName} imageUrl={lead.avatarUrl} />
                       <View style={{ flex: 1, minWidth: 0, gap: 1 }}>
                         <AppText
                           variant="caption"
@@ -278,5 +313,12 @@ const styles = StyleSheet.create({
     width: 36,
     height: 36,
     borderRadius: 18,
+  },
+  leadAvatarFallback: {
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: StyleSheet.hairlineWidth,
+    overflow: "hidden",
+    flexShrink: 0,
   },
 });

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { ActivityIndicator, StyleSheet, View } from "react-native";
 import { useRouter } from "expo-router";
 import { Image } from "expo-image";
@@ -21,6 +21,12 @@ import { useRailContent } from "@/features/layout/RailContext";
 import { space } from "@/theme/tokens";
 
 type Dept = ClinicDetail;
+type HospitalGroup = NonNullable<Dept["hospital"]> & {
+  departments: Dept[];
+  openSlots: number;
+  doctors: number;
+  totalPatients: number;
+};
 
 function initials(name: string): string {
   const parts = name.trim().split(/\s+/).filter(Boolean);
@@ -69,6 +75,9 @@ export default function DepartmentsScreen() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [selected, setSelected] = useState<Dept | null>(null);
+  const [selectedHospitalId, setSelectedHospitalId] = useState<string | null>(
+    null,
+  );
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -94,6 +103,50 @@ export default function DepartmentsScreen() {
     void load();
   }, [load]);
 
+  const hospitals = useMemo(() => {
+    const groups = new Map<string, HospitalGroup>();
+
+    departments.forEach((dept) => {
+      const hospital = dept.hospital;
+      if (!hospital) return;
+
+      const existing = groups.get(hospital.id);
+      const group =
+        existing ??
+        ({
+          ...hospital,
+          departments: [],
+          openSlots: 0,
+          doctors: 0,
+          totalPatients: 0,
+        } satisfies HospitalGroup);
+
+      group.departments.push(dept);
+      group.openSlots += dept.openSlots ?? 0;
+      group.doctors += dept._count?.doctors ?? dept.doctors?.length ?? 0;
+      group.totalPatients += dept.totalPatients ?? 0;
+      groups.set(hospital.id, group);
+    });
+
+    return [...groups.values()].sort((a, b) => a.name.localeCompare(b.name));
+  }, [departments]);
+
+  const selectedHospital =
+    hospitals.find((hospital) => hospital.id === selectedHospitalId) ??
+    hospitals[0] ??
+    null;
+
+  useEffect(() => {
+    if (!selectedHospital) return;
+    if (selected?.hospital?.id === selectedHospital.id) return;
+    setSelected(selectedHospital.departments[0] ?? null);
+  }, [selected, selectedHospital]);
+
+  const selectHospital = (hospital: HospitalGroup) => {
+    setSelectedHospitalId(hospital.id);
+    setSelected(hospital.departments[0] ?? null);
+  };
+
   const openDepartment = (dept: Dept) => {
     setSelected(dept);
     if (!isWide) router.push(`/department/${dept.id}`);
@@ -117,7 +170,7 @@ export default function DepartmentsScreen() {
           <View style={{ gap: space[1] }}>
             <AppText variant="h1">Clinics</AppText>
             <AppText variant="body" tone="secondary">
-              Choose a clinic to book a slot.
+              Choose a hospital, then review departments and doctors.
             </AppText>
           </View>
           {!isWide ? (
@@ -138,130 +191,258 @@ export default function DepartmentsScreen() {
         </AppText>
       ) : null}
 
-      <View style={[styles.grid, isDesktop && styles.gridDesktop]}>
-        {departments.map((dept) => {
-          const active = selected?.id === dept.id;
-          const lead = dept.doctors?.[0];
-          const extras = (dept.doctors?.length ?? 0) - 1;
-          const hospitalPlace = [dept.hospital?.name, dept.hospital?.city]
-            .filter(Boolean)
-            .join(", ");
-          const place = [hospitalPlace, dept.location, dept.wing]
-            .filter(Boolean)
-            .join(" · ");
-          const mapsQuery = [dept.hospital?.name, dept.name, dept.location, dept.wing]
-            .filter(Boolean)
-            .join(", ");
-          return (
-            <PressableScale
-              key={dept.id}
-              onPress={() => openDepartment(dept)}
-              style={isDesktop ? styles.cardPress : undefined}
-            >
-              <Surface
-                outlined
-                padded={false}
-                style={[
-                  styles.card,
-                  active && isWide ? { borderColor: colors.accent } : null,
-                ]}
-              >
-                <ClinicCover
-                  name={dept.name}
-                  imageUrl={dept.imageUrl}
-                  height={112}
-                  compact
-                  flush
-                />
-                <View style={styles.cardBody}>
-                  <View style={styles.cardTop}>
-                    {dept.category ? (
-                      <AppText variant="label" tone="tertiary" numberOfLines={1}>
-                        {dept.hospital?.name
-                          ? `${dept.hospital.name} · ${dept.category ?? "Clinic"}`
-                          : dept.category}
-                      </AppText>
-                    ) : null}
-                    <AppText variant="h2" numberOfLines={1}>
-                      {dept.name}
-                    </AppText>
-                    <AppText
-                      variant="caption"
-                      tone="secondary"
-                      numberOfLines={2}
-                    >
-                      {dept.summary?.trim() || dept.description}
-                    </AppText>
-                  </View>
-
-                  <View style={styles.metaBlock}>
-                    {place ? (
-                      <MetaLink
-                        icon="location-outline"
-                        label={place}
-                        numberOfLines={1}
-                        onPress={() => void openMaps(mapsQuery)}
-                      />
-                    ) : null}
-                    {dept.hours ? (
-                      <MetaLink
-                        icon="time-outline"
-                        label={dept.hours}
-                        numberOfLines={1}
-                      />
-                    ) : null}
-                    {dept.phone ? (
-                      <MetaLink
-                        icon="call-outline"
-                        label={dept.phone}
-                        numberOfLines={1}
-                        onPress={() => void openPhone(dept.phone!)}
-                      />
-                    ) : null}
-                    {dept.priceRange ? (
-                      <MetaLink
-                        icon="cash-outline"
-                        label={dept.priceRange}
-                        numberOfLines={1}
-                      />
-                    ) : null}
-                  </View>
-
-                  <View
+      <View style={{ gap: space[5] }}>
+        <View style={{ gap: space[2] }}>
+          <AppText variant="label" tone="tertiary">
+            Hospitals
+          </AppText>
+          <View style={[styles.grid, isDesktop && styles.gridDesktop]}>
+            {hospitals.map((hospital) => {
+              const active = selectedHospital?.id === hospital.id;
+              const mapsQuery = [hospital.name, hospital.address, hospital.city]
+                .filter(Boolean)
+                .join(", ");
+              return (
+                <PressableScale
+                  key={hospital.id}
+                  onPress={() => selectHospital(hospital)}
+                  style={isDesktop ? styles.cardPress : undefined}
+                >
+                  <Surface
+                    outlined
+                    padded={false}
                     style={[
-                      styles.statsRow,
-                      { borderTopColor: colors.hairline },
+                      styles.card,
+                      active ? { borderColor: colors.accent } : null,
                     ]}
                   >
-                    <AppText variant="label" tone="tertiary" numberOfLines={1}>
-                      {dept.totalPatients ?? 0} patients, {dept.openSlots ?? 0}{" "}
-                      open, {dept._count?.doctors ?? 0} doctors
-                    </AppText>
-                  </View>
-
-                  {lead ? (
-                    <View style={styles.leadRow}>
-                      <LeadAvatar name={lead.fullName} imageUrl={lead.avatarUrl} />
-                      <View style={{ flex: 1, minWidth: 0, gap: 1 }}>
+                    <ClinicCover
+                      name={hospital.name}
+                      imageUrl={hospital.imageUrl}
+                      subtitle={hospital.city}
+                      height={124}
+                      compact
+                      flush
+                    />
+                    <View style={styles.cardBody}>
+                      <View style={styles.cardTop}>
+                        <AppText variant="label" tone="tertiary" numberOfLines={1}>
+                          Hospital
+                        </AppText>
+                        <AppText variant="h2" numberOfLines={1}>
+                          {hospital.name}
+                        </AppText>
                         <AppText
                           variant="caption"
-                          tone="tertiary"
-                          numberOfLines={1}
+                          tone="secondary"
+                          numberOfLines={2}
                         >
-                          Lead clinician
+                          {hospital.description}
                         </AppText>
-                        <AppText variant="body" numberOfLines={1}>
-                          {lead.fullName}
-                          {extras > 0 ? ` +${extras}` : ""}
+                      </View>
+
+                      <View style={styles.metaBlock}>
+                        {[hospital.city, hospital.address].filter(Boolean).length ? (
+                          <MetaLink
+                            icon="location-outline"
+                            label={[hospital.city, hospital.address]
+                              .filter(Boolean)
+                              .join(" · ")}
+                            numberOfLines={1}
+                            onPress={() => void openMaps(mapsQuery)}
+                          />
+                        ) : null}
+                        {hospital.phone ? (
+                          <MetaLink
+                            icon="call-outline"
+                            label={hospital.phone}
+                            numberOfLines={1}
+                            onPress={() => void openPhone(hospital.phone!)}
+                          />
+                        ) : null}
+                      </View>
+
+                      <View
+                        style={[
+                          styles.statsRow,
+                          { borderTopColor: colors.hairline },
+                        ]}
+                      >
+                        <AppText variant="label" tone="tertiary" numberOfLines={1}>
+                          {hospital.departments.length} departments,{" "}
+                          {hospital.openSlots} open, {hospital.doctors} doctors
                         </AppText>
                       </View>
                     </View>
-                  ) : null}
-                </View>
-              </Surface>
-            </PressableScale>
-          );
-        })}
+                  </Surface>
+                </PressableScale>
+              );
+            })}
+          </View>
+        </View>
+
+        {selectedHospital ? (
+          <View style={{ gap: space[2] }}>
+            <View style={styles.sectionHeader}>
+              <View style={{ flex: 1, minWidth: 0 }}>
+                <AppText variant="label" tone="tertiary">
+                  Departments
+                </AppText>
+                <AppText variant="h2" numberOfLines={1}>
+                  {selectedHospital.name}
+                </AppText>
+              </View>
+              <AppText variant="caption" tone="secondary" numberOfLines={1}>
+                {selectedHospital.city}
+              </AppText>
+            </View>
+
+            <View style={[styles.grid, isDesktop && styles.gridDesktop]}>
+              {selectedHospital.departments.map((dept) => {
+                const active = selected?.id === dept.id;
+                const lead = dept.doctors?.[0];
+                const extras = (dept.doctors?.length ?? 0) - 1;
+                const place = [dept.location, dept.wing]
+                  .filter(Boolean)
+                  .join(" · ");
+                const mapsQuery = [
+                  dept.hospital?.name,
+                  dept.name,
+                  dept.location,
+                  dept.wing,
+                ]
+                  .filter(Boolean)
+                  .join(", ");
+                return (
+                  <PressableScale
+                    key={dept.id}
+                    onPress={() => openDepartment(dept)}
+                    style={isDesktop ? styles.cardPress : undefined}
+                  >
+                    <Surface
+                      outlined
+                      padded={false}
+                      style={[
+                        styles.card,
+                        active && isWide ? { borderColor: colors.accent } : null,
+                      ]}
+                    >
+                      <ClinicCover
+                        name={dept.name}
+                        imageUrl={dept.imageUrl}
+                        height={112}
+                        compact
+                        flush
+                      />
+                      <View style={styles.cardBody}>
+                        <View style={styles.cardTop}>
+                          {dept.category ? (
+                            <AppText
+                              variant="label"
+                              tone="tertiary"
+                              numberOfLines={1}
+                            >
+                              {dept.category}
+                            </AppText>
+                          ) : null}
+                          <AppText variant="h2" numberOfLines={1}>
+                            {dept.name}
+                          </AppText>
+                          <AppText
+                            variant="caption"
+                            tone="secondary"
+                            numberOfLines={2}
+                          >
+                            {dept.summary?.trim() || dept.description}
+                          </AppText>
+                        </View>
+
+                        <View style={styles.metaBlock}>
+                          {place ? (
+                            <MetaLink
+                              icon="location-outline"
+                              label={place}
+                              numberOfLines={1}
+                              onPress={() => void openMaps(mapsQuery)}
+                            />
+                          ) : null}
+                          {dept.hours ? (
+                            <MetaLink
+                              icon="time-outline"
+                              label={dept.hours}
+                              numberOfLines={1}
+                            />
+                          ) : null}
+                          {dept.phone ? (
+                            <MetaLink
+                              icon="call-outline"
+                              label={dept.phone}
+                              numberOfLines={1}
+                              onPress={() => void openPhone(dept.phone!)}
+                            />
+                          ) : null}
+                          {dept.priceRange ? (
+                            <MetaLink
+                              icon="cash-outline"
+                              label={dept.priceRange}
+                              numberOfLines={1}
+                            />
+                          ) : null}
+                        </View>
+
+                        <View
+                          style={[
+                            styles.statsRow,
+                            { borderTopColor: colors.hairline },
+                          ]}
+                        >
+                          <AppText
+                            variant="label"
+                            tone="tertiary"
+                            numberOfLines={1}
+                          >
+                            {dept.totalPatients ?? 0} patients,{" "}
+                            {dept.openSlots ?? 0} open,{" "}
+                            {dept._count?.doctors ?? 0} doctors
+                          </AppText>
+                        </View>
+
+                        {lead ? (
+                          <View style={styles.leadRow}>
+                            <LeadAvatar
+                              name={lead.fullName}
+                              imageUrl={lead.avatarUrl}
+                            />
+                            <View style={{ flex: 1, minWidth: 0, gap: 1 }}>
+                              <AppText
+                                variant="caption"
+                                tone="tertiary"
+                                numberOfLines={1}
+                              >
+                                Doctors
+                              </AppText>
+                              <AppText variant="body" numberOfLines={1}>
+                                {lead.fullName}
+                                {extras > 0 ? ` +${extras}` : ""}
+                              </AppText>
+                              <AppText
+                                variant="caption"
+                                tone="secondary"
+                                numberOfLines={1}
+                              >
+                                {lead.specialty}
+                              </AppText>
+                            </View>
+                          </View>
+                        ) : null}
+                      </View>
+                    </Surface>
+                  </PressableScale>
+                );
+              })}
+            </View>
+          </View>
+        ) : null}
       </View>
     </Screen>
   );
@@ -296,6 +477,12 @@ const styles = StyleSheet.create({
   },
   cardTop: {
     gap: space[1],
+  },
+  sectionHeader: {
+    flexDirection: "row",
+    alignItems: "flex-end",
+    justifyContent: "space-between",
+    gap: space[3],
   },
   metaBlock: {
     gap: space[2],

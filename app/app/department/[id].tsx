@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
+  Platform,
   StyleSheet,
   TextInput,
   View,
@@ -59,8 +60,8 @@ function BookingWorkspace() {
   const [step, setStep] = useState<BookingStepId>("date");
   const [day, setDay] = useState<string | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [customDay, setCustomDay] = useState<string | null>(null);
-  const [customHour, setCustomHour] = useState<number | null>(null);
+  const [customDate, setCustomDate] = useState("");
+  const [customTime, setCustomTime] = useState("");
   const [customStartsAt, setCustomStartsAt] = useState<string | null>(null);
   const [booking, setBooking] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -136,39 +137,15 @@ function BookingWorkspace() {
     return available.filter((s) => dayKey(s.startsAt) === day);
   }, [available, day]);
 
-  const customDays = useMemo(() => {
-    const result: Array<{ key: string; label: string }> = [];
+  const customDateBounds = useMemo(() => {
     const now = new Date();
-    for (let offset = 0; offset < 14; offset++) {
-      const date = new Date(now);
-      date.setDate(date.getDate() + offset);
-      date.setHours(12, 0, 0, 0);
-      if (date.getDay() === 0) continue;
-      result.push({
-        key: dayKey(date),
-        label: formatCalendarDate(date),
-      });
-    }
-    return result;
+    const max = new Date(now);
+    max.setDate(max.getDate() + 13);
+    return {
+      min: dayKey(now),
+      max: dayKey(max),
+    };
   }, []);
-
-  const customHours = useMemo(() => {
-    const now = new Date();
-    const selectedDay = customDay ? parseDayKey(customDay) : null;
-    return [8, 9, 10, 11, 13, 14, 15, 16].filter((hour) => {
-      if (!selectedDay) return true;
-      const candidate = new Date(
-        selectedDay.getFullYear(),
-        selectedDay.getMonth(),
-        selectedDay.getDate(),
-        hour,
-        0,
-        0,
-        0,
-      );
-      return candidate.getTime() > now.getTime();
-    });
-  }, [customDay]);
 
   const selected = available.find((s) => s.id === selectedId) ?? null;
   const selectedStartsAt = selected?.startsAt ?? customStartsAt;
@@ -220,32 +197,85 @@ function BookingWorkspace() {
   };
 
   const chooseCustomTime = () => {
-    if (!customDay || customHour === null) {
+    if (!customDate || !customTime) {
       setError("Choose a date and time.");
       return;
     }
-    const selectedDay = parseDayKey(customDay);
+    const selectedDay = parseDayKey(customDate);
+    const [hourRaw, minuteRaw] = customTime.split(":").map(Number);
+    const hour = hourRaw ?? NaN;
+    const minute = minuteRaw ?? NaN;
     const startsAt = new Date(
       selectedDay.getFullYear(),
       selectedDay.getMonth(),
       selectedDay.getDate(),
-      customHour,
-      0,
+      hour,
+      minute,
       0,
       0,
     );
-    if (Number.isNaN(startsAt.getTime())) {
-      setError("Enter a valid date and time.");
+    const allowedHours = new Set([8, 9, 10, 11, 13, 14, 15, 16]);
+    if (
+      Number.isNaN(hour) ||
+      Number.isNaN(minute) ||
+      minute !== 0 ||
+      !allowedHours.has(hour)
+    ) {
+      setError("Choose an hourly time from 8:00 AM to 4:00 PM, excluding 12:00 PM.");
+      return;
+    }
+    const maxDate = parseDayKey(customDateBounds.max);
+    maxDate.setHours(23, 59, 59, 999);
+    if (
+      startsAt.getDay() === 0 ||
+      startsAt.getTime() > maxDate.getTime()
+    ) {
+      setError("Choose a Monday to Saturday date within the next 14 days.");
       return;
     }
     if (startsAt.getTime() <= Date.now()) {
       setError("Choose a future date and time.");
       return;
     }
+    if (Number.isNaN(startsAt.getTime())) {
+      setError("Enter a valid date and time.");
+      return;
+    }
     setError(null);
     setSelectedId(null);
     setCustomStartsAt(startsAt.toISOString());
     setStep("details");
+  };
+
+  const nativeDateProps =
+    Platform.OS === "web"
+      ? ({
+          type: "date",
+          min: customDateBounds.min,
+          max: customDateBounds.max,
+        } as Record<string, unknown>)
+      : {};
+
+  const nativeTimeProps =
+    Platform.OS === "web"
+      ? ({
+          type: "time",
+          min: "08:00",
+          max: "16:00",
+          step: 3600,
+        } as Record<string, unknown>)
+      : {};
+
+  const handleCustomDateChange = (value: string) => {
+    setCustomDate(value);
+    setCustomStartsAt(null);
+    setSelectedId(null);
+  };
+
+  const handleCustomTimeChange = (value: string) => {
+    setCustomTime(value);
+    setCustomStartsAt(null);
+    setSelectedId(null);
   };
 
   const inputStyle = [
@@ -322,94 +352,39 @@ function BookingWorkspace() {
               <AppText variant="label" tone="tertiary">
                 Date
               </AppText>
-              <View style={[styles.datePickerGrid, isPhone && styles.datePickerGridPhone]}>
-                {customDays.map((option) => {
-                  const active = customDay === option.key;
-                  return (
-                    <PressableScale
-                      key={option.key}
-                      onPress={() => {
-                        setCustomDay(option.key);
-                        setCustomHour(null);
-                        setCustomStartsAt(null);
-                        setSelectedId(null);
-                      }}
-                      style={[styles.customDatePress, isPhone && styles.customDatePressPhone]}
-                    >
-                      <Surface
-                        outlined
-                        style={[
-                          styles.customChoice,
-                          {
-                            backgroundColor: active ? colors.ink : colors.surfaceRaised,
-                            borderColor: active ? colors.ink : colors.hairline,
-                          },
-                        ]}
-                      >
-                        <AppText
-                          variant="caption"
-                          numberOfLines={1}
-                          style={{ color: active ? colors.inkInverse : colors.ink }}
-                        >
-                          {option.label}
-                        </AppText>
-                      </Surface>
-                    </PressableScale>
-                  );
-                })}
-              </View>
+              <TextInput
+                value={customDate}
+                onChangeText={handleCustomDateChange}
+                placeholder="Select date"
+                placeholderTextColor={colors.inkFaint}
+                style={inputStyle}
+                {...nativeDateProps}
+              />
+              <AppText variant="caption" tone="tertiary">
+                Monday to Saturday, within the next 14 days.
+              </AppText>
             </View>
             <View style={styles.pickerBlock}>
               <AppText variant="label" tone="tertiary">
                 Time
               </AppText>
-              <View style={[styles.timePickerGrid, isPhone && styles.timeGridPhone]}>
-                {customHours.map((hour) => {
-                  const active = customHour === hour;
-                  return (
-                    <PressableScale
-                      key={hour}
-                      onPress={() => {
-                        setCustomHour(hour);
-                        setCustomStartsAt(null);
-                        setSelectedId(null);
-                      }}
-                      style={[styles.timePress, isPhone && styles.timePressPhone]}
-                    >
-                      <Surface
-                        outlined
-                        style={[
-                          styles.timeCard,
-                          {
-                            backgroundColor: active ? colors.ink : colors.surfaceRaised,
-                            borderColor: active ? colors.ink : colors.hairline,
-                          },
-                        ]}
-                      >
-                        <AppText
-                          variant="body"
-                          mono
-                          numberOfLines={1}
-                          style={{ color: active ? colors.inkInverse : colors.ink }}
-                        >
-                          {formatClockTime(new Date(2026, 0, 1, hour, 0, 0, 0))}
-                        </AppText>
-                      </Surface>
-                    </PressableScale>
-                  );
-                })}
-              </View>
-              {customDay && customHours.length === 0 ? (
-                <AppText variant="caption" tone="secondary">
-                  No remaining hospital-hour times today. Choose another date.
-                </AppText>
-              ) : null}
+              <TextInput
+                value={customTime}
+                onChangeText={handleCustomTimeChange}
+                placeholder="Select time"
+                placeholderTextColor={colors.inkFaint}
+                style={inputStyle}
+                {...nativeTimeProps}
+              />
+              <AppText variant="caption" tone="tertiary">
+                Hourly starts from 8:00 AM to 4:00 PM, excluding 12:00 PM.
+              </AppText>
             </View>
             <Button
               label="Use this date and time"
               variant="accent"
               onPress={chooseCustomTime}
-              disabled={!customDay || customHour === null}
+              disabled={!customDate || !customTime}
             />
           </Surface>
           <View style={[styles.dayGrid, isPhone && styles.dayGridPhone]}>

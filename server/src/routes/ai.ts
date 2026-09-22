@@ -245,7 +245,7 @@ export const aiRoutes: FastifyPluginAsync = async (app) => {
     const wantsAppointments =
       /\b(my appointments?|next appointment|upcoming|bookings?|visits?)\b/.test(text);
     const wantsAvailability =
-      /\b(available|availability|slots?|times?|book|appointment|quiet|busy|free)\b/.test(text);
+      /\b(available|availability|open|slots?|times?|days?|when|book|appointment|quiet|busy|free)\b/.test(text);
     const asksRules =
       /\b(same time|same date|duplicate|occupied|already booked|double book|book twice)\b/.test(text);
     const asksCapabilities =
